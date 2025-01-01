@@ -1,46 +1,7 @@
-import "./style.css";
 import { mat4 } from "gl-matrix";
-
-// Shader Code
-const shaderCode = `
-struct VertexInput {
-  @location(0) position: vec4<f32>,
-  @location(1) color: vec4<f32>,
-}
-
-struct VertexOutput {
-  @builtin(position) position: vec4<f32>,
-  @location(0) color: vec4<f32>,
-  @location(1) uv: vec2<f32>,
-}
-
-@group(0) @binding(0)
-var<uniform> matrices: mat4x4f;
-
-@vertex
-fn main(input: VertexInput) -> VertexOutput {
-  var output: VertexOutput;
-  let pos = matrices * input.position;
-  output.position = pos;
-  output.color = input.color;
-  output.uv = vec2<f32>(input.position.x * 0.5 + 0.5, input.position.y * 0.5 + 0.5); // UV mapping
-  return output;
-}
-
-@group(0) @binding(1)
-var starTexture: texture_2d<f32>;
-@group(0) @binding(2)
-var starSampler: sampler;
-
-@fragment
-fn main_fragment(@location(0) color: vec4<f32>, @location(1) uv: vec2<f32>) -> @location(0) vec4<f32> {
-  var texColor = textureSample(starTexture, starSampler, uv).rgb;
-  let texColor4f = vec4<f32>(texColor, 1.0);
-  return color * texColor4f;
-}
-`;
-
-const MAT4X4_BYTE_LENGTH = 4 * 4 * 4;
+import planetVertWGSL from "./shaders/planet.vert.wgsl?raw";
+import simpleColorFragWGSL from "./shaders/simple-color.frag.wgsl?raw";
+import { MAT4X4_BYTE_LENGTH } from "./constants";
 
 if (!navigator?.gpu) {
   throw Error("WebGPU not supported.");
@@ -52,9 +13,6 @@ if (!adapter) {
 }
 
 const device = await adapter.requestDevice();
-
-// Create Shader Modules
-const shaderModule = device.createShaderModule({ code: shaderCode });
 
 const canvas = <HTMLCanvasElement>document.getElementById("galaxy");
 canvas.width = window.innerWidth;
@@ -89,6 +47,7 @@ for (let i = 0; i < starCount; i++) {
 const vertices = new Float32Array(vertexData);
 
 const vertexBuffer = device.createBuffer({
+  label: "stars vertices buffer",
   size: vertices.byteLength,
   usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
 });
@@ -139,7 +98,7 @@ const DEPTH_FORMAT = "depth24plus";
 const pipeline = device.createRenderPipeline({
   layout: "auto",
   vertex: {
-    module: shaderModule,
+    module: device.createShaderModule({ code: planetVertWGSL }),
     entryPoint: "main",
     buffers: [
       {
@@ -156,7 +115,7 @@ const pipeline = device.createRenderPipeline({
     ],
   },
   fragment: {
-    module: shaderModule,
+    module: device.createShaderModule({ code: simpleColorFragWGSL }),
     entryPoint: "main_fragment",
     targets: [{ format }],
   },
@@ -188,7 +147,7 @@ const bindGroup = device.createBindGroup({
 const renderPassDescriptor: GPURenderPassDescriptor = {
   colorAttachments: [
     {
-      view: undefined,
+      view: undefined, // assigned later in the frame loop (to prevent texture being destroyed)
       loadOp: "clear",
       storeOp: "store",
       clearValue: { r: 0, g: 0.2, b: 0, a: 1 },
@@ -221,7 +180,7 @@ function frame() {
   );
   const viewMatrix = mat4.lookAt(
     mat4.create(),
-    [0, 3, 3], // eye: the position of the camera
+    [0, 6, 5], // eye: the position of the camera
     [0, 0, 0], // center: the point at which the camera is looking at
     [0, 1, 0], // up: The up vector should be orthogonal to the viewing direction
   );
@@ -240,10 +199,13 @@ function frame() {
     MAT4X4_BYTE_LENGTH,
   );
 
-  // Render
+  /// Render
+  // Texture
   renderPassDescriptor.colorAttachments[0].view = context
     .getCurrentTexture()
     .createView();
+
+  // Command encoder
   const commandEncoder = device.createCommandEncoder();
   const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
   passEncoder.setPipeline(pipeline);
