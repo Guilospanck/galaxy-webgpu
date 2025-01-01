@@ -116,7 +116,7 @@ const texture = device.createTexture({
 // Fill texture with random star patterns
 const textureData = new Uint8Array(TEXTURE_WIDTH * TEXTURE_HEIGHT * 4);
 for (let i = 0; i < textureData.length; i += 4) {
-  const brightness = Math.random() > 0.95 ? 255 : 0; // Sparse stars
+  const brightness = Math.random() < 0.95 ? 255 : 0; // Sparse stars
   textureData[i] = brightness;
   textureData[i + 1] = brightness;
   textureData[i + 2] = brightness;
@@ -185,15 +185,13 @@ const bindGroup = device.createBindGroup({
   ],
 });
 
-const textureView = context.getCurrentTexture().createView();
-
 const renderPassDescriptor: GPURenderPassDescriptor = {
   colorAttachments: [
     {
-      view: textureView,
+      view: undefined,
       loadOp: "clear",
       storeOp: "store",
-      clearValue: { r: 0, g: 0, b: 0, a: 1 },
+      clearValue: { r: 0, g: 0.2, b: 0, a: 1 },
     },
   ],
   depthStencilAttachment: {
@@ -211,7 +209,7 @@ const NEAR_FRUSTUM = 0.1;
 const FAR_FRUSTUM = 100;
 
 function frame() {
-  time += 1;
+  time += 0.01;
 
   // Update Uniform Buffer (Projection and Rotation)
   const projectionMatrix = mat4.perspective(
@@ -223,9 +221,9 @@ function frame() {
   );
   const viewMatrix = mat4.lookAt(
     mat4.create(),
-    [0, time, 0], // eye: the position of the camera
+    [0, 3, 3], // eye: the position of the camera
     [0, 0, 0], // center: the point at which the camera is looking at
-    [0, 0, 1], // up: The up vector should be orthogonal to the viewing direction
+    [0, 1, 0], // up: The up vector should be orthogonal to the viewing direction
   );
   const modelMatrix = mat4.rotateZ(mat4.create(), mat4.create(), time);
   const matrix = mat4.multiply(
@@ -243,6 +241,9 @@ function frame() {
   );
 
   // Render
+  renderPassDescriptor.colorAttachments[0].view = context
+    .getCurrentTexture()
+    .createView();
   const commandEncoder = device.createCommandEncoder();
   const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
   passEncoder.setPipeline(pipeline);
@@ -255,4 +256,4 @@ function frame() {
   requestAnimationFrame(frame);
 }
 
-frame();
+requestAnimationFrame(frame);
