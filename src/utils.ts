@@ -207,6 +207,7 @@ export const setupPointerEvents = (input: PointerEventsInput): void => {
 type ModelViewProjectionInputParams = {
   modelRotationX?: number;
   modelRotationY?: number;
+  modelTranslation?: vec3;
   cameraEye?: vec3;
   cameraLookupCenter?: vec3;
   cameraUp?: vec3;
@@ -218,6 +219,7 @@ type ModelViewProjectionInputParams = {
 ///
 /// @param{modelRotationX}: angle in radians of how much to rotate the model around the Y-axis;
 /// @param{modelRotationY}: angle in radians of how much to rotate the model around the X-axis;
+/// @param{modelTranslation}: vec3 containing the model translations in x, y and z;
 /// @param{cameraEye}: the position of the camera;
 /// @param{cameraLookupCenter}: the point at which point the camera is looking at;
 /// @param{cameraUp}: what is the up for the camera. It needs to be orthogonal to the viewing direction;
@@ -230,6 +232,7 @@ export const getModelViewProjectionMatrix = (
   const {
     modelRotationY = 0,
     modelRotationX = 0,
+    modelTranslation = [0, 0, 0],
     cameraEye = [0, 0, 4],
     cameraLookupCenter = [0, 0, 0],
     cameraUp = [0, 1, 0],
@@ -243,6 +246,7 @@ export const getModelViewProjectionMatrix = (
     modelRotationX,
   );
   mat4.rotateX(modelMatrix, modelMatrix, modelRotationY);
+  mat4.translate(modelMatrix, modelMatrix, modelTranslation);
 
   // View
   const viewMatrix = mat4.lookAt(

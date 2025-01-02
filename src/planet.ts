@@ -44,6 +44,8 @@ fn main_fragment(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
 }
 `;
 
+const NUMBER_OF_PLANETS = 5;
+
 let rotationAngleX = 0;
 let rotationAngleY = 0;
 let scale = 5;
@@ -106,10 +108,19 @@ const texCoordBuffer = device.createBuffer({
 new Float32Array(texCoordBuffer.getMappedRange()).set(texCoords);
 texCoordBuffer.unmap();
 
+const roundUp = (size: number, alignment: number) =>
+  Math.ceil(size / alignment) * alignment;
+
 // Uniform Buffer
+let uniformBufferSize = MAT4X4_BYTE_LENGTH; // for each planet, we have only a MVP matrix (mat4)
+uniformBufferSize = roundUp(
+  uniformBufferSize,
+  device.limits.minUniformBufferOffsetAlignment,
+); // uniform buffer needs to be aligned correctly (it works without it if you don't use dynamic offsets)
+uniformBufferSize = uniformBufferSize * NUMBER_OF_PLANETS; // finally we update it for the number of planets we'll render
 const uniformBuffer = device.createBuffer({
   label: "uniform coordinates buffer",
-  size: MAT4X4_BYTE_LENGTH,
+  size: uniformBufferSize,
   usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
 });
 
@@ -125,10 +136,34 @@ const sampler = device.createSampler({
 const shaderModule = device.createShaderModule({ code: shaderCode });
 console.assert(shaderModule !== null, "Failed to compile shader code");
 
+const bindGroupLayout = device.createBindGroupLayout({
+  label: "custom bind group layout",
+  entries: [
+    {
+      binding: 0, // Uniform buffer
+      visibility: GPUShaderStage.VERTEX,
+      buffer: {
+        type: "uniform",
+        hasDynamicOffset: true, // Enable dynamic offsets
+      },
+    },
+    {
+      binding: 1, // Sampler
+      visibility: GPUShaderStage.FRAGMENT,
+      sampler: {},
+    },
+    {
+      binding: 2, // Texture
+      visibility: GPUShaderStage.FRAGMENT,
+      texture: {},
+    },
+  ],
+});
+
 // Pipeline
 const pipeline = device.createRenderPipeline({
   label: "render pipeline",
-  layout: "auto",
+  layout: device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
   vertex: {
     module: shaderModule,
     entryPoint: "main",
@@ -169,7 +204,13 @@ const bindGroup = device.createBindGroup({
   label: "bind group element",
   layout: pipeline.getBindGroupLayout(0),
   entries: [
-    { binding: 0, resource: { buffer: uniformBuffer } },
+    {
+      binding: 0,
+      resource: {
+        buffer: uniformBuffer,
+        size: uniformBufferSize / NUMBER_OF_PLANETS, // Specify size for each binding range (INFO: without it, it would think that the entire buffer is for one single planet)
+      },
+    },
     { binding: 1, resource: sampler },
     { binding: 2, resource: texture.createView() },
   ],
@@ -194,23 +235,14 @@ const passDescriptor: GPURenderPassDescriptor = {
 };
 
 const perspectiveAspectRatio = canvas.width / canvas.height;
+const emptyVector: vec3 = [0, 0, 0];
+const translationVec: vec3 = [2, 0, 0];
+const cameraUp: vec3 = [0, 1, 0];
 
 function frame() {
+  // Camera-related (for the view matrix)
   const cameraEye: vec3 = [0, 0, scale];
   const cameraLookupCenter: vec3 = [-offsetX, offsetY, 0];
-  const cameraUp: vec3 = [0, 1, 0];
-
-  const mvpMatrix = getModelViewProjectionMatrix({
-    modelRotationX: rotationAngleX,
-    modelRotationY: rotationAngleY,
-    cameraEye,
-    cameraLookupCenter,
-    cameraUp,
-    perspectiveAspectRatio,
-  });
-
-  // Update MVP Matrix
-  device.queue.writeBuffer(uniformBuffer, 0, mvpMatrix);
 
   // Update Texture View
   passDescriptor.colorAttachments[0].view = context
@@ -221,14 +253,53 @@ function frame() {
   const commandEncoder = device.createCommandEncoder({
     label: "command encoder",
   });
-  const renderPass = commandEncoder.beginRenderPass(passDescriptor);
 
+  const renderPass = commandEncoder.beginRenderPass(passDescriptor);
   renderPass.setPipeline(pipeline);
   renderPass.setVertexBuffer(0, vertexBuffer);
   renderPass.setVertexBuffer(1, texCoordBuffer);
   renderPass.setIndexBuffer(indexBuffer, "uint32");
-  renderPass.setBindGroup(0, bindGroup);
-  renderPass.drawIndexed(indices.length);
+
+  // Fill in all uniform MVP matrices
+  const allMatrices = new Float32Array(
+    uniformBufferSize / Float32Array.BYTES_PER_ELEMENT,
+  );
+  let previousTranslation: vec3 = [0, 0, 0];
+  for (let i = 0; i < NUMBER_OF_PLANETS; i++) {
+    const modelTranslation: vec3 = vec3.add(
+      emptyVector,
+      previousTranslation,
+      translationVec,
+    );
+    previousTranslation = modelTranslation;
+    const mvpMatrix = getModelViewProjectionMatrix({
+      modelRotationX: rotationAngleX,
+      modelRotationY: rotationAngleY,
+      modelTranslation,
+      cameraEye,
+      cameraLookupCenter,
+      cameraUp,
+      perspectiveAspectRatio,
+    });
+    allMatrices.set(
+      mvpMatrix,
+      i *
+        (uniformBufferSize /
+          NUMBER_OF_PLANETS /
+          Float32Array.BYTES_PER_ELEMENT),
+    );
+  }
+
+  // Update MVP Matrices
+  device.queue.writeBuffer(uniformBuffer, 0, allMatrices);
+
+  for (let i = 0; i < NUMBER_OF_PLANETS; i++) {
+    const dynamicOffset = i * (uniformBufferSize / NUMBER_OF_PLANETS);
+    renderPass.setBindGroup(0, bindGroup, [dynamicOffset]);
+    renderPass.drawIndexed(indices.length);
+  }
+
+  // Finalise render pass
   renderPass.end();
 
   // Submit Commands
