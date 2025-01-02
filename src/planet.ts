@@ -273,8 +273,8 @@ function frame() {
     );
     previousTranslation = modelTranslation;
     const mvpMatrix = getModelViewProjectionMatrix({
-      modelRotationX: rotationAngleX,
-      modelRotationY: rotationAngleY,
+      cameraRotationX: rotationAngleX,
+      cameraRotationY: rotationAngleY,
       modelTranslation,
       cameraEye,
       cameraLookupCenter,
