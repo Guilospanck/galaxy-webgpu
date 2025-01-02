@@ -1,29 +1,11 @@
-import { mat4 } from "gl-matrix";
+import { mat4, vec3 } from "gl-matrix";
 import planetVertWGSL from "./shaders/planet.vert.wgsl?raw";
 import simpleColorFragWGSL from "./shaders/simple-color.frag.wgsl?raw";
 import { MAT4X4_BYTE_LENGTH } from "./constants";
+import { initWebGPUAndCanvas } from "./webgpu";
+import { getModelViewProjectionMatrix } from "./utils";
 
-if (!navigator?.gpu) {
-  throw Error("WebGPU not supported.");
-}
-
-const adapter = await navigator.gpu.requestAdapter();
-if (!adapter) {
-  throw Error("Couldn't request WebGPU adapter.");
-}
-
-const device = await adapter.requestDevice();
-
-const canvas = <HTMLCanvasElement>document.getElementById("galaxy");
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
-const context = canvas.getContext("webgpu") as GPUCanvasContext;
-
-const format = navigator.gpu.getPreferredCanvasFormat();
-context.configure({
-  device,
-  format,
-});
+const { canvas, context, device, format } = await initWebGPUAndCanvas();
 
 // Vertex Data (3D Galaxy)
 const vertexData = [];
@@ -163,43 +145,26 @@ const renderPassDescriptor: GPURenderPassDescriptor = {
   },
 };
 
+const perspectiveAspectRatio = canvas.width / canvas.height;
+
 // Animation Loop
 let time = 0;
-
-const NEAR_FRUSTUM = 0.1;
-const FAR_FRUSTUM = 100;
 
 function frame() {
   time += 0.001;
 
-  // Update Uniform Buffer (Projection and Rotation)
-  const projectionMatrix = mat4.perspective(
-    mat4.create(),
-    Math.PI / 4,
-    canvas.width / canvas.height,
-    NEAR_FRUSTUM,
-    FAR_FRUSTUM,
-  );
-  const viewMatrix = mat4.lookAt(
-    mat4.create(),
-    [0, 3, 3], // eye: the position of the camera
-    [0, 0, 0], // center: the point at which the camera is looking at
-    [0, 1, 0], // up: The up vector should be orthogonal to the viewing direction
-  );
-  const modelMatrix = mat4.rotateZ(mat4.create(), mat4.create(), time);
-  const matrix = mat4.multiply(
-    mat4.create(),
-    projectionMatrix,
-    mat4.multiply(mat4.create(), viewMatrix, modelMatrix),
-  );
+  const cameraEye: vec3 = [0, 3, 3];
+  const cameraLookupCenter: vec3 = [0, 0, 0];
+  const cameraUp: vec3 = [0, 1, 0];
 
-  device.queue.writeBuffer(
-    uniformBuffer,
-    0,
-    (matrix as Float32Array).buffer,
-    0,
-    MAT4X4_BYTE_LENGTH,
-  );
+  const mvpMatrix = getModelViewProjectionMatrix({
+    cameraEye,
+    cameraLookupCenter,
+    cameraUp,
+    perspectiveAspectRatio,
+  });
+
+  device.queue.writeBuffer(uniformBuffer, 0, mvpMatrix, 0, MAT4X4_BYTE_LENGTH);
 
   /// Render
   // Texture

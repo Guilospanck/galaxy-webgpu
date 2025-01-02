@@ -1,5 +1,14 @@
-import { mat4 } from "gl-matrix";
 import EarthTexture from "/textures/earth.png";
+import { MAT4X4_BYTE_LENGTH } from "./constants";
+import {
+  createSphere,
+  getModelViewProjectionMatrix,
+  PointerEventsCallbackData,
+  setupPointerEvents,
+  webGPUTextureFromImageUrl,
+} from "./utils";
+import { initWebGPUAndCanvas } from "./webgpu";
+import { vec3 } from "gl-matrix";
 
 // Shader Code
 const shaderCode = `
@@ -35,137 +44,37 @@ fn main_fragment(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
 }
 `;
 
-let isDragging = false;
-let lastPointerX: number | null = null;
-let lastPointerY: number | null = null;
-
 let rotationAngleX = 0;
 let rotationAngleY = 0;
 let scale = 5;
 let offsetX = 0;
 let offsetY = 0;
 
-const setupPointerEvents = (canvas: HTMLCanvasElement) => {
-  canvas.addEventListener("pointerdown", (event) => {
-    isDragging = true;
-    lastPointerX = event.clientX;
-    lastPointerY = event.clientY;
-  });
+const { canvas, context, device, format } = await initWebGPUAndCanvas();
 
-  canvas.addEventListener("pointermove", (event) => {
-    if (!isDragging || lastPointerX === null || lastPointerY === null) return;
-
-    const deltaX = event.clientX - lastPointerX;
-    const deltaY = event.clientY - lastPointerY;
-
-    if (event.shiftKey) {
-      // Rotate if Shift key is pressed
-      rotationAngleX += deltaX * 0.01; // Adjust sensitivity
-      rotationAngleY += deltaY * 0.01; // Adjust sensitivity
-    } else {
-      // Pan otherwise
-      offsetX += deltaX * 0.01;
-      offsetY += deltaY * 0.01;
-    }
-
-    lastPointerX = event.clientX;
-    lastPointerY = event.clientY;
-  });
-
-  canvas.addEventListener("pointerup", () => {
-    isDragging = false;
-    lastPointerX = null;
-    lastPointerY = null;
-  });
-
-  canvas.addEventListener("pointerleave", () => {
-    isDragging = false;
-    lastPointerX = null;
-    lastPointerY = null;
-  });
-
-  // Wheel event for zooming
-  canvas.addEventListener("wheel", (event) => {
-    event.preventDefault();
-
-    const zoomFactor = 1.1; // Adjust sensitivity
-    if (event.deltaY < 0) {
-      scale *= zoomFactor; // Zoom in
-    } else {
-      scale /= zoomFactor; // Zoom out
-    }
-  });
+const callbackUpdatePointerEvents = (data: PointerEventsCallbackData): void => {
+  rotationAngleX = data.rotationAngleX;
+  rotationAngleY = data.rotationAngleY;
+  scale = data.scale;
+  offsetX = data.offsetX;
+  offsetY = data.offsetY;
 };
 
-if (!navigator?.gpu) {
-  throw Error("WebGPU not supported.");
-}
-
-const adapter = await navigator.gpu.requestAdapter();
-if (!adapter) {
-  throw Error("Couldn't request WebGPU adapter.");
-}
-
-const device = await adapter.requestDevice();
-device.lost.then((info) => {
-  console.error("GPU device lost:", info.message);
+setupPointerEvents({
+  canvas,
+  rotationAngleX,
+  rotationAngleY,
+  scale,
+  offsetX,
+  offsetY,
+  callback: callbackUpdatePointerEvents,
 });
 
-const canvas = <HTMLCanvasElement>document.getElementById("galaxy");
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
-const context = canvas.getContext("webgpu") as GPUCanvasContext;
-
-const format = navigator.gpu.getPreferredCanvasFormat();
-context.configure({
-  device,
-  format,
+const { vertices, indices, texCoords } = createSphere({
+  radius: 1,
+  latBands: 30,
+  lonBands: 30,
 });
-
-// Sphere generation
-function createSphere(radius: number, latBands: number, lonBands: number) {
-  const vertices = [];
-  const indices = [];
-  const texCoords = [];
-  const normals = [];
-
-  for (let lat = 0; lat <= latBands; ++lat) {
-    const theta = (lat * Math.PI) / latBands; // Latitude angle
-    const sinTheta = Math.sin(theta);
-    const cosTheta = Math.cos(theta);
-
-    for (let lon = 0; lon <= lonBands; ++lon) {
-      const phi = (lon * 2 * Math.PI) / lonBands; // Longitude angle
-      const sinPhi = Math.sin(phi);
-      const cosPhi = Math.cos(phi);
-
-      const x = cosPhi * sinTheta;
-      const y = cosTheta;
-      const z = sinPhi * sinTheta;
-
-      const u = lon / lonBands;
-      const v = lat / latBands;
-
-      vertices.push(radius * x, radius * y, radius * z);
-      normals.push(x, y, z);
-      texCoords.push(u, v);
-    }
-  }
-
-  for (let lat = 0; lat < latBands; ++lat) {
-    for (let lon = 0; lon < lonBands; ++lon) {
-      const first = lat * (lonBands + 1) + lon;
-      const second = first + lonBands + 1;
-
-      indices.push(first, second, first + 1);
-      indices.push(second, second + 1, first + 1);
-    }
-  }
-
-  return { vertices, indices, texCoords, normals };
-}
-
-const { vertices, indices, texCoords } = createSphere(1, 30, 30);
 
 // Create Vertex Buffer
 const vertexBuffer = device.createBuffer({
@@ -180,7 +89,7 @@ vertexBuffer.unmap();
 // Create Index Buffer
 const indexBuffer = device.createBuffer({
   label: "index buffer",
-  size: indices.length * 4,
+  size: indices.length * Float32Array.BYTES_PER_ELEMENT,
   usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
   mappedAtCreation: true,
 });
@@ -190,7 +99,7 @@ indexBuffer.unmap();
 // Create Texture Coordinates Buffer
 const texCoordBuffer = device.createBuffer({
   label: "texture coordinates buffer",
-  size: texCoords.length * 4,
+  size: texCoords.length * Float32Array.BYTES_PER_ELEMENT,
   usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
   mappedAtCreation: true,
 });
@@ -200,44 +109,10 @@ texCoordBuffer.unmap();
 // Uniform Buffer
 const uniformBuffer = device.createBuffer({
   label: "uniform coordinates buffer",
-  size: 16 * Float32Array.BYTES_PER_ELEMENT, // Matrix4x4
+  size: MAT4X4_BYTE_LENGTH,
   usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
 });
 
-function webGPUTextureFromImageBitmapOrCanvas(
-  gpuDevice: GPUDevice,
-  source: ImageBitmap,
-) {
-  const textureDescriptor = {
-    // Unlike in WebGL, the size of our texture must be set at texture creation time.
-    // This means we have to wait until the image is loaded to create the texture, since we won't
-    // know the size until then.
-    label: `texture element ${source}`,
-    size: { width: source.width, height: source.height },
-    format: "rgba8unorm" as GPUTextureFormat,
-    usage:
-      GPUTextureUsage.TEXTURE_BINDING |
-      GPUTextureUsage.COPY_DST |
-      GPUTextureUsage.RENDER_ATTACHMENT,
-  };
-  const texture = gpuDevice.createTexture(textureDescriptor);
-
-  gpuDevice.queue.copyExternalImageToTexture(
-    { source },
-    { texture },
-    textureDescriptor.size,
-  );
-
-  return texture;
-}
-
-async function webGPUTextureFromImageUrl(gpuDevice: GPUDevice, url: string) {
-  const response = await fetch(url);
-  const blob = await response.blob();
-  const imgBitmap = await createImageBitmap(blob);
-
-  return webGPUTextureFromImageBitmapOrCanvas(gpuDevice, imgBitmap);
-}
 const texture = await webGPUTextureFromImageUrl(device, EarthTexture);
 
 const sampler = device.createSampler({
@@ -318,42 +193,24 @@ const passDescriptor: GPURenderPassDescriptor = {
   },
 };
 
-const NEAR_FRUSTUM = 0.1;
-const FAR_FRUSTUM = 100;
-
-setupPointerEvents(canvas);
+const perspectiveAspectRatio = canvas.width / canvas.height;
 
 function frame() {
-  const projectionMatrix = mat4.perspective(
-    mat4.create(),
-    Math.PI / 4,
-    canvas.width / canvas.height,
-    NEAR_FRUSTUM,
-    FAR_FRUSTUM,
-  );
+  const cameraEye: vec3 = [0, 0, scale];
+  const cameraLookupCenter: vec3 = [-offsetX, offsetY, 0];
+  const cameraUp: vec3 = [0, 1, 0];
 
-  const viewMatrix = mat4.lookAt(
-    mat4.create(),
-    [0, 0, scale],
-    [-offsetX, offsetY, 0],
-    [0, 1, 0],
-  );
-
-  const modelMatrix = mat4.rotateY(
-    mat4.create(),
-    mat4.create(),
-    rotationAngleX,
-  );
-  mat4.rotateX(modelMatrix, modelMatrix, rotationAngleY);
-
-  const mvpMatrix = mat4.multiply(
-    mat4.create(),
-    projectionMatrix,
-    mat4.multiply(mat4.create(), viewMatrix, modelMatrix),
-  );
+  const mvpMatrix = getModelViewProjectionMatrix({
+    modelRotationX: rotationAngleX,
+    modelRotationY: rotationAngleY,
+    cameraEye,
+    cameraLookupCenter,
+    cameraUp,
+    perspectiveAspectRatio,
+  });
 
   // Update MVP Matrix
-  device.queue.writeBuffer(uniformBuffer, 0, new Float32Array(mvpMatrix));
+  device.queue.writeBuffer(uniformBuffer, 0, mvpMatrix);
 
   // Update Texture View
   passDescriptor.colorAttachments[0].view = context
@@ -372,7 +229,6 @@ function frame() {
   renderPass.setIndexBuffer(indexBuffer, "uint32");
   renderPass.setBindGroup(0, bindGroup);
   renderPass.drawIndexed(indices.length);
-  // renderPass.draw(vertices.length);
   renderPass.end();
 
   // Submit Commands
