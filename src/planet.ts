@@ -72,8 +72,8 @@ setupPointerEvents({
 
 const { vertices, indices, texCoords } = createSphere({
   radius: 1,
-  latBands: 30,
-  lonBands: 30,
+  latBands: 40,
+  longBands: 40,
 });
 
 // Create Vertex Buffer

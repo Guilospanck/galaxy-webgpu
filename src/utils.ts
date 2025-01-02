@@ -42,14 +42,23 @@ export const webGPUTextureFromImageUrl = async (
 };
 
 /// Sphere generation
+///
+/// It uses [spherical coordinates](https://mathworld.wolfram.com/SphericalCoordinates.html) to calculate the values.
+///
+/// @param{radius}: the radius (r) of the sphere;
+/// @param{latBands}: the number of latitude bands (horizontal stripes) that the sphere will have. The greater this value,
+/// the smoother the sphere, but also demands more computationally.
+/// @param{longBands}: the number of longitude bands (vertical slices) that the sphere will have. The greater this value,
+/// the smoother the sphere, but also demands more computationally.
+//
 export const createSphere = ({
   radius,
   latBands,
-  lonBands,
+  longBands,
 }: {
   radius: number;
   latBands: number;
-  lonBands: number;
+  longBands: number;
 }) => {
   const vertices = [];
   const indices = [];
@@ -61,8 +70,8 @@ export const createSphere = ({
     const sinTheta = Math.sin(theta);
     const cosTheta = Math.cos(theta);
 
-    for (let lon = 0; lon <= lonBands; ++lon) {
-      const phi = (lon * 2 * Math.PI) / lonBands; // Longitude angle
+    for (let lon = 0; lon <= longBands; ++lon) {
+      const phi = (lon * 2 * Math.PI) / longBands; // Longitude angle
       const sinPhi = Math.sin(phi);
       const cosPhi = Math.cos(phi);
 
@@ -70,7 +79,7 @@ export const createSphere = ({
       const y = cosTheta;
       const z = sinPhi * sinTheta;
 
-      const u = lon / lonBands;
+      const u = lon / longBands;
       const v = lat / latBands;
 
       vertices.push(radius * x, radius * y, radius * z);
@@ -79,13 +88,34 @@ export const createSphere = ({
     }
   }
 
+  /*
+   * Vertices:
+      second     second + 1
+        *-----------*
+        |         / |
+        |       /   |
+        |     /     |
+        *-----------*
+      first       first + 1
+   *
+   * */
+  const moveVerticallyToNextLatitudeBand = longBands + 1;
+  const moveHorizontallyToNextLongitudeBand = (curr: number) => curr + 1;
   for (let lat = 0; lat < latBands; ++lat) {
-    for (let lon = 0; lon < lonBands; ++lon) {
-      const first = lat * (lonBands + 1) + lon;
-      const second = first + lonBands + 1;
+    for (let lon = 0; lon < longBands; ++lon) {
+      // Index of the bottom-left vertex of the quad
+      const first = lat * moveVerticallyToNextLatitudeBand + lon;
+      // Index of the top-left vertex of the quad
+      const second = first + moveVerticallyToNextLatitudeBand;
 
-      indices.push(first, second, first + 1);
-      indices.push(second, second + 1, first + 1);
+      // First triangle: bottom-left, top-left, bottom-right
+      indices.push(first, second, moveHorizontallyToNextLongitudeBand(first));
+      // Second triangle: top-left, top-right, bottom-right
+      indices.push(
+        second,
+        moveHorizontallyToNextLongitudeBand(second),
+        moveHorizontallyToNextLongitudeBand(first),
+      );
     }
   }
 
