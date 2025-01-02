@@ -4,6 +4,7 @@ import {
   createSphere,
   getModelViewProjectionMatrix,
   PointerEventsCallbackData,
+  roundUp,
   setupPointerEvents,
   webGPUTextureFromImageUrl,
 } from "./utils";
@@ -54,23 +55,23 @@ let offsetY = 0;
 
 const { canvas, context, device, format } = await initWebGPUAndCanvas();
 
-const callbackUpdatePointerEvents = (data: PointerEventsCallbackData): void => {
-  rotationAngleX = data.rotationAngleX;
-  rotationAngleY = data.rotationAngleY;
-  scale = data.scale;
-  offsetX = data.offsetX;
-  offsetY = data.offsetY;
-};
-
-setupPointerEvents({
-  canvas,
-  rotationAngleX,
-  rotationAngleY,
-  scale,
-  offsetX,
-  offsetY,
-  callback: callbackUpdatePointerEvents,
-});
+// const callbackUpdatePointerEvents = (data: PointerEventsCallbackData): void => {
+//   rotationAngleX = data.rotationAngleX;
+//   rotationAngleY = data.rotationAngleY;
+//   scale = data.scale;
+//   offsetX = data.offsetX;
+//   offsetY = data.offsetY;
+// };
+//
+// setupPointerEvents({
+//   canvas,
+//   rotationAngleX,
+//   rotationAngleY,
+//   scale,
+//   offsetX,
+//   offsetY,
+//   callback: callbackUpdatePointerEvents,
+// });
 
 const { vertices, indices, texCoords } = createSphere({
   radius: 1,
@@ -107,9 +108,6 @@ const texCoordBuffer = device.createBuffer({
 });
 new Float32Array(texCoordBuffer.getMappedRange()).set(texCoords);
 texCoordBuffer.unmap();
-
-const roundUp = (size: number, alignment: number) =>
-  Math.ceil(size / alignment) * alignment;
 
 // Uniform Buffer
 let uniformBufferSize = MAT4X4_BYTE_LENGTH; // for each planet, we have only a MVP matrix (mat4)
@@ -240,6 +238,8 @@ const translationVec: vec3 = [2, 0, 0];
 const cameraUp: vec3 = [0, 1, 0];
 
 function frame() {
+  let movement = new Date().getTime() * 0.001;
+
   // Camera-related (for the view matrix)
   const cameraEye: vec3 = [0, 0, scale];
   const cameraLookupCenter: vec3 = [-offsetX, offsetY, 0];

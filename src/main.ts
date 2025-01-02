@@ -1,2 +1,2 @@
-import { initPlanet } from "./planet";
-initPlanet();
+import { initScatteredPoints } from "./scattered-points";
+initScatteredPoints();

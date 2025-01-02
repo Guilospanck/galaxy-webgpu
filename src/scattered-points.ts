@@ -1,4 +1,4 @@
-import { mat4, vec3 } from "gl-matrix";
+import { vec3 } from "gl-matrix";
 import planetVertWGSL from "./shaders/planet.vert.wgsl?raw";
 import simpleColorFragWGSL from "./shaders/simple-color.frag.wgsl?raw";
 import { MAT4X4_BYTE_LENGTH } from "./constants";
@@ -40,6 +40,7 @@ vertexBuffer.unmap();
 
 // Uniform Buffer (Projection and View Matrix)
 const uniformBuffer = device.createBuffer({
+  label: "uniform buffer",
   size: MAT4X4_BYTE_LENGTH,
   usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
 });
@@ -162,9 +163,10 @@ function frame() {
     cameraLookupCenter,
     cameraUp,
     perspectiveAspectRatio,
+    modelRotationZ: time,
   });
 
-  device.queue.writeBuffer(uniformBuffer, 0, mvpMatrix, 0, MAT4X4_BYTE_LENGTH);
+  device.queue.writeBuffer(uniformBuffer, 0, mvpMatrix);
 
   /// Render
   // Texture
