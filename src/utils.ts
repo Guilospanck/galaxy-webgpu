@@ -193,7 +193,7 @@ export const setupPointerEvents = (input: PointerEventsInput): void => {
   canvas.addEventListener("wheel", (event) => {
     event.preventDefault();
 
-    const zoomFactor = 1.1; // Adjust sensitivity
+    const zoomFactor = 1.01; // Adjust sensitivity
     if (event.deltaY < 0) {
       scale *= zoomFactor; // Zoom in
     } else {
@@ -210,6 +210,7 @@ type ModelViewProjectionInputParams = {
   modelRotationZ?: number;
   cameraRotationX?: number;
   cameraRotationY?: number;
+  cameraRotationZ?: number;
   modelTranslation?: vec3;
   cameraEye?: vec3;
   cameraLookupCenter?: vec3;
@@ -225,6 +226,7 @@ type ModelViewProjectionInputParams = {
 /// @param{modelRotationZ}: angle in radians of how much to rotate the model around the Z-axis;
 /// @param{cameraRotationX}: angle in radians of how much to rotate the camera around the X-axis;
 /// @param{cameraRotationY}: angle in radians of how much to rotate the camera around the Y-axis;
+/// @param{cameraRotationZ}: angle in radians of how much to rotate the camera around the Z-axis;
 /// @param{modelTranslation}: vec3 containing the model translations in x, y and z;
 /// @param{cameraEye}: the position of the camera;
 /// @param{cameraLookupCenter}: the point at which point the camera is looking at;
@@ -239,8 +241,9 @@ export const getModelViewProjectionMatrix = (
     modelRotationX = 0,
     modelRotationY = 0,
     modelRotationZ = 0,
-    cameraRotationY = 0,
     cameraRotationX = 0,
+    cameraRotationY = 0,
+    cameraRotationZ = 0,
     modelTranslation = [0, 0, 0],
     cameraEye = [0, 0, 4],
     cameraLookupCenter = [0, 0, 0],
@@ -267,6 +270,7 @@ export const getModelViewProjectionMatrix = (
   );
   mat4.rotateX(viewMatrix, viewMatrix, cameraRotationX);
   mat4.rotateY(viewMatrix, viewMatrix, cameraRotationY);
+  mat4.rotateZ(viewMatrix, viewMatrix, cameraRotationZ);
 
   // Projection
   const projectionMatrix = mat4.perspective(

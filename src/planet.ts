@@ -1,12 +1,10 @@
-import EarthTexture from "/textures/earth.png";
-import { MAT4X4_BYTE_LENGTH } from "./constants";
+import { MAT4X4_BYTE_LENGTH, PlanetTextures } from "./constants";
 import {
   createSphere,
   getModelViewProjectionMatrix,
   PointerEventsCallbackData,
   roundUp,
   setupPointerEvents,
-  webGPUTextureFromImageUrl,
 } from "./utils";
 import { initWebGPUAndCanvas } from "./webgpu";
 import { vec3 } from "gl-matrix";
@@ -55,23 +53,23 @@ let offsetY = 0;
 
 const { canvas, context, device, format } = await initWebGPUAndCanvas();
 
-// const callbackUpdatePointerEvents = (data: PointerEventsCallbackData): void => {
-//   rotationAngleX = data.rotationAngleX;
-//   rotationAngleY = data.rotationAngleY;
-//   scale = data.scale;
-//   offsetX = data.offsetX;
-//   offsetY = data.offsetY;
-// };
-//
-// setupPointerEvents({
-//   canvas,
-//   rotationAngleX,
-//   rotationAngleY,
-//   scale,
-//   offsetX,
-//   offsetY,
-//   callback: callbackUpdatePointerEvents,
-// });
+const callbackUpdatePointerEvents = (data: PointerEventsCallbackData): void => {
+  rotationAngleX = data.rotationAngleX;
+  rotationAngleY = data.rotationAngleY;
+  scale = data.scale;
+  offsetX = data.offsetX;
+  offsetY = data.offsetY;
+};
+
+setupPointerEvents({
+  canvas,
+  rotationAngleX,
+  rotationAngleY,
+  scale,
+  offsetX,
+  offsetY,
+  callback: callbackUpdatePointerEvents,
+});
 
 const { vertices, indices, texCoords } = createSphere({
   radius: 1,
@@ -122,7 +120,7 @@ const uniformBuffer = device.createBuffer({
   usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
 });
 
-const texture = await webGPUTextureFromImageUrl(device, EarthTexture);
+const textures = await new PlanetTextures(device);
 
 const sampler = device.createSampler({
   label: "sampler element",
@@ -197,23 +195,6 @@ const depthTexture = device.createTexture({
   usage: GPUTextureUsage.RENDER_ATTACHMENT,
 });
 
-// Bind Group
-const bindGroup = device.createBindGroup({
-  label: "bind group element",
-  layout: pipeline.getBindGroupLayout(0),
-  entries: [
-    {
-      binding: 0,
-      resource: {
-        buffer: uniformBuffer,
-        size: uniformBufferSize / NUMBER_OF_PLANETS, // Specify size for each binding range (INFO: without it, it would think that the entire buffer is for one single planet)
-      },
-    },
-    { binding: 1, resource: sampler },
-    { binding: 2, resource: texture.createView() },
-  ],
-});
-
 const passDescriptor: GPURenderPassDescriptor = {
   label: "pass descriptor element",
   colorAttachments: [
@@ -234,11 +215,11 @@ const passDescriptor: GPURenderPassDescriptor = {
 
 const perspectiveAspectRatio = canvas.width / canvas.height;
 const emptyVector: vec3 = [0, 0, 0];
-const translationVec: vec3 = [2, 0, 0];
+const translationVec: vec3 = [4, 0, 0];
 const cameraUp: vec3 = [0, 1, 0];
 
 function frame() {
-  let movement = new Date().getTime() * 0.001;
+  let movement = new Date().getTime() * 0.0001;
 
   // Camera-related (for the view matrix)
   const cameraEye: vec3 = [0, 0, scale];
@@ -275,6 +256,7 @@ function frame() {
     const mvpMatrix = getModelViewProjectionMatrix({
       cameraRotationX: rotationAngleX,
       cameraRotationY: rotationAngleY,
+      cameraRotationZ: movement * i + 0.0001,
       modelTranslation,
       cameraEye,
       cameraLookupCenter,
@@ -295,6 +277,27 @@ function frame() {
 
   for (let i = 0; i < NUMBER_OF_PLANETS; i++) {
     const dynamicOffset = i * (uniformBufferSize / NUMBER_OF_PLANETS);
+
+    const texture = textures.getTextureBasedOnIndex(i);
+    console.assert(texture !== null, `Failed to load texture ${i}`);
+
+    // Bind Group
+    const bindGroup = device.createBindGroup({
+      label: "bind group element",
+      layout: pipeline.getBindGroupLayout(0),
+      entries: [
+        {
+          binding: 0,
+          resource: {
+            buffer: uniformBuffer,
+            size: uniformBufferSize / NUMBER_OF_PLANETS, // Specify size for each binding range (INFO: without it, it would think that the entire buffer is for one single planet)
+          },
+        },
+        { binding: 1, resource: sampler },
+        { binding: 2, resource: texture.createView() },
+      ],
+    });
+
     renderPass.setBindGroup(0, bindGroup, [dynamicOffset]);
     renderPass.drawIndexed(indices.length);
   }
