@@ -1,4 +1,5 @@
 import { MAT4X4_BYTE_LENGTH, PlanetTextures } from "./constants";
+import { GUI } from "dat.gui";
 import {
   createSphere,
   getModelViewProjectionMatrix,
@@ -43,7 +44,15 @@ fn main_fragment(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
 }
 `;
 
-const NUMBER_OF_PLANETS = 5;
+const settings = {
+  planets: 5,
+};
+
+const setupUI = () => {
+  const gui = new GUI();
+  gui.add(settings, "planets", 1, 1200).step(1);
+};
+setupUI();
 
 let rotationAngleX = 0;
 let rotationAngleY = 0;
@@ -113,12 +122,6 @@ uniformBufferSize = roundUp(
   uniformBufferSize,
   device.limits.minUniformBufferOffsetAlignment,
 ); // uniform buffer needs to be aligned correctly (it works without it if you don't use dynamic offsets)
-uniformBufferSize = uniformBufferSize * NUMBER_OF_PLANETS; // finally we update it for the number of planets we'll render
-const uniformBuffer = device.createBuffer({
-  label: "uniform coordinates buffer",
-  size: uniformBufferSize,
-  usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-});
 
 const textures = await new PlanetTextures(device);
 
@@ -199,7 +202,7 @@ const passDescriptor: GPURenderPassDescriptor = {
   label: "pass descriptor element",
   colorAttachments: [
     {
-      view: undefined,
+      view: undefined, // assigned later
       clearValue: { r: 0, g: 0, b: 0, a: 1 },
       loadOp: "clear",
       storeOp: "store",
@@ -241,12 +244,18 @@ function frame() {
   renderPass.setVertexBuffer(1, texCoordBuffer);
   renderPass.setIndexBuffer(indexBuffer, "uint32");
 
+  const uniformBuffer = device.createBuffer({
+    label: "uniform coordinates buffer",
+    size: uniformBufferSize * settings.planets,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  });
+
   // Fill in all uniform MVP matrices
   const allMatrices = new Float32Array(
-    uniformBufferSize / Float32Array.BYTES_PER_ELEMENT,
+    (uniformBufferSize * settings.planets) / Float32Array.BYTES_PER_ELEMENT,
   );
   let previousTranslation: vec3 = [0, 0, 0];
-  for (let i = 0; i < NUMBER_OF_PLANETS; i++) {
+  for (let i = 0; i < settings.planets; i++) {
     const modelTranslation: vec3 = vec3.add(
       emptyVector,
       previousTranslation,
@@ -265,18 +274,15 @@ function frame() {
     });
     allMatrices.set(
       mvpMatrix,
-      i *
-        (uniformBufferSize /
-          NUMBER_OF_PLANETS /
-          Float32Array.BYTES_PER_ELEMENT),
+      i * (uniformBufferSize / Float32Array.BYTES_PER_ELEMENT),
     );
   }
 
   // Update MVP Matrices
   device.queue.writeBuffer(uniformBuffer, 0, allMatrices);
 
-  for (let i = 0; i < NUMBER_OF_PLANETS; i++) {
-    const dynamicOffset = i * (uniformBufferSize / NUMBER_OF_PLANETS);
+  for (let i = 0; i < settings.planets; i++) {
+    const dynamicOffset = i * uniformBufferSize;
 
     const texture = textures.getTextureBasedOnIndex(i);
     console.assert(texture !== null, `Failed to load texture ${i}`);
@@ -290,7 +296,7 @@ function frame() {
           binding: 0,
           resource: {
             buffer: uniformBuffer,
-            size: uniformBufferSize / NUMBER_OF_PLANETS, // Specify size for each binding range (INFO: without it, it would think that the entire buffer is for one single planet)
+            size: uniformBufferSize, // Specify size for each binding range (INFO: without it, it would think that the entire buffer is for one single planet)
           },
         },
         { binding: 1, resource: sampler },
