@@ -1,4 +1,4 @@
-import { MAT4X4_BYTE_LENGTH, PlanetTextures } from "./constants";
+import { MAT4X4_BYTE_LENGTH } from "./constants";
 import { GUI } from "dat.gui";
 import {
   createSphere,
@@ -9,6 +9,7 @@ import {
 } from "./utils";
 import { initWebGPUAndCanvas } from "./webgpu";
 import { vec3 } from "gl-matrix";
+import { PlanetTextures } from "./textures";
 
 // Shader Code
 const shaderCode = `
@@ -123,6 +124,7 @@ uniformBufferSize = roundUp(
   device.limits.minUniformBufferOffsetAlignment,
 ); // uniform buffer needs to be aligned correctly (it works without it if you don't use dynamic offsets)
 
+// INFO: we are using an async constructor
 const textures = await new PlanetTextures(device);
 
 const sampler = device.createSampler({
