@@ -1,6 +1,5 @@
 import { vec3 } from "gl-matrix";
-import planetVertWGSL from "./shaders/planet.vert.wgsl?raw";
-import simpleColorFragWGSL from "./shaders/simple-color.frag.wgsl?raw";
+import scatteredPointsWGSL from "./shaders/scattered-points.wgsl?raw";
 import { MAT4X4_BYTE_LENGTH } from "./constants";
 import { initWebGPUAndCanvas } from "./webgpu";
 import { getModelViewProjectionMatrix } from "./utils";
@@ -78,12 +77,14 @@ const sampler = device.createSampler({
   minFilter: "linear",
 });
 
+const shaderModel = device.createShaderModule({ code: scatteredPointsWGSL });
+
 // Pipeline
 const DEPTH_FORMAT = "depth24plus";
 const pipeline = device.createRenderPipeline({
   layout: "auto",
   vertex: {
-    module: device.createShaderModule({ code: planetVertWGSL }),
+    module: shaderModel,
     entryPoint: "main",
     buffers: [
       {
@@ -100,7 +101,7 @@ const pipeline = device.createRenderPipeline({
     ],
   },
   fragment: {
-    module: device.createShaderModule({ code: simpleColorFragWGSL }),
+    module: shaderModel,
     entryPoint: "main_fragment",
     targets: [{ format }],
   },

@@ -10,40 +10,7 @@ import {
 import { initWebGPUAndCanvas } from "./webgpu";
 import { vec3 } from "gl-matrix";
 import { PlanetTextures } from "./textures";
-
-// Shader Code
-const shaderCode = `
-struct VertexInput {
-  @location(0) position: vec3<f32>,
-  @location(1) texCoord: vec2<f32>,
-}
-
-struct VertexOutput {
-  @builtin(position) position: vec4<f32>,
-  @location(0) uv: vec2<f32>,
-}
-
-@group(0) @binding(0)
-var<uniform> mvpMatrix: mat4x4<f32>;
-
-@vertex
-fn main(input: VertexInput) -> VertexOutput {
-  var output: VertexOutput;
-  output.position = mvpMatrix * vec4<f32>(input.position, 1.0);
-  output.uv = input.texCoord;
-  return output;
-}
-
-@group(0) @binding(1)
-var textureSampler: sampler;
-@group(0) @binding(2)
-var sphereTexture: texture_2d<f32>;
-
-@fragment
-fn main_fragment(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
-  return textureSample(sphereTexture, textureSampler, uv);
-}
-`;
+import planetWGSL from "./shaders/planet.wgsl?raw";
 
 const settings = {
   planets: 5,
@@ -134,7 +101,7 @@ const sampler = device.createSampler({
 });
 
 // Create Shader Module
-const shaderModule = device.createShaderModule({ code: shaderCode });
+const shaderModule = device.createShaderModule({ code: planetWGSL });
 console.assert(shaderModule !== null, "Failed to compile shader code");
 
 const bindGroupLayout = device.createBindGroupLayout({
@@ -252,7 +219,8 @@ function frame() {
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
 
-  // Fill in all uniform MVP matrices
+  // Fill in all uniform MVP matrices beforehand so you don't have to
+  // `device.queue.writeBuffer` for each one of the planets.
   const allMatrices = new Float32Array(
     (uniformBufferSize * settings.planets) / Float32Array.BYTES_PER_ELEMENT,
   );
