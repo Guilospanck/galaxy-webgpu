@@ -91,7 +91,7 @@ const { vertices, indices, texCoords } = createSphere({
 const vertexBuffer = device.createBuffer({
   label: "vertices buffer",
   size: vertices.length * Float32Array.BYTES_PER_ELEMENT,
-  usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+  usage: GPUBufferUsage.VERTEX,
   mappedAtCreation: true,
 });
 new Float32Array(vertexBuffer.getMappedRange()).set(vertices);
@@ -101,7 +101,7 @@ vertexBuffer.unmap();
 const indexBuffer = device.createBuffer({
   label: "index buffer",
   size: indices.length * Float32Array.BYTES_PER_ELEMENT,
-  usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
+  usage: GPUBufferUsage.INDEX,
   mappedAtCreation: true,
 });
 new Uint32Array(indexBuffer.getMappedRange()).set(indices);
@@ -111,7 +111,7 @@ indexBuffer.unmap();
 const texCoordBuffer = device.createBuffer({
   label: "texture coordinates buffer",
   size: texCoords.length * Float32Array.BYTES_PER_ELEMENT,
-  usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+  usage: GPUBufferUsage.VERTEX,
   mappedAtCreation: true,
 });
 new Float32Array(texCoordBuffer.getMappedRange()).set(texCoords);
@@ -298,7 +298,7 @@ function frame() {
           binding: 0,
           resource: {
             buffer: uniformBuffer,
-            size: uniformBufferSize, // Specify size for each binding range (INFO: without it, it would think that the entire buffer is for one single planet)
+            size: uniformBufferSize,
           },
         },
         { binding: 1, resource: sampler },
