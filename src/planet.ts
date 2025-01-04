@@ -4,7 +4,9 @@ import {
   createSphereMesh,
   getModelMatrix,
   getViewProjectionMatrix,
+  hasCameraChangedPositions,
   PointerEventsCallbackData,
+  PointerEventsTransformations,
   setupPointerEvents,
 } from "./utils";
 import { initWebGPUAndCanvas } from "./webgpu";
@@ -31,25 +33,23 @@ const setupUI = () => {
 setupUI();
 
 /// Pointer events
-let rotationAngleX = 0;
-let rotationAngleY = 0;
-let scale = 5;
-let offsetX = 0;
-let offsetY = 0;
+const pointerEvents: PointerEventsTransformations = {
+  rotationAngleX: 0,
+  rotationAngleY: 0,
+  scale: 5,
+  offsetX: 0,
+  offsetY: 0,
+};
 const callbackUpdatePointerEvents = (data: PointerEventsCallbackData): void => {
-  rotationAngleX = data.rotationAngleX;
-  rotationAngleY = data.rotationAngleY;
-  scale = data.scale;
-  offsetX = data.offsetX;
-  offsetY = data.offsetY;
+  pointerEvents.rotationAngleX = data.rotationAngleX;
+  pointerEvents.rotationAngleY = data.rotationAngleY;
+  pointerEvents.scale = data.scale;
+  pointerEvents.offsetX = data.offsetX;
+  pointerEvents.offsetY = data.offsetY;
 };
 setupPointerEvents({
   canvas,
-  rotationAngleX,
-  rotationAngleY,
-  scale,
-  offsetX,
-  offsetY,
+  pointerEvents,
   callback: callbackUpdatePointerEvents,
 });
 
@@ -132,6 +132,39 @@ const passDescriptor: GPURenderPassDescriptor = {
   },
 };
 
+let viewProjectionMatrixUniformBuffer: GPUBuffer;
+const calculateAndSetViewProjectionMatrix = ({
+  rotationAngleX,
+  rotationAngleY,
+  scale,
+  offsetX,
+  offsetY,
+}: PointerEventsTransformations) => {
+  // Create view projection matrix uniform buffer
+  viewProjectionMatrixUniformBuffer = device.createBuffer({
+    label: "view projection matrix uniform coordinates buffer",
+    size: MAT4X4_BYTE_LENGTH,
+    usage: GPUBufferUsage.UNIFORM,
+    mappedAtCreation: true,
+  });
+  const cameraEye: vec3 = [0, 0, scale];
+  const cameraLookupCenter: vec3 = [-offsetX, offsetY, 0];
+  const viewProjectionMatrix = getViewProjectionMatrix({
+    cameraRotationX: -rotationAngleY,
+    cameraRotationZ: rotationAngleX,
+    cameraEye,
+    cameraLookupCenter,
+    cameraUp,
+    perspectiveAspectRatio,
+  });
+
+  new Float32Array(viewProjectionMatrixUniformBuffer.getMappedRange()).set(
+    viewProjectionMatrix,
+  );
+  viewProjectionMatrixUniformBuffer.unmap();
+};
+calculateAndSetViewProjectionMatrix(pointerEvents);
+
 type PlanetBuffers = {
   vertexBuffer: GPUBuffer; // position and texCoords
   indexBuffer: GPUBuffer;
@@ -186,8 +219,8 @@ const createPlanetAndItsBuffers = ({
 /// This is a trade-off between saving this states in memory or re-creating them.
 ///
 const planetsBuffers = [];
-const createPlanets = () => {
-  for (let i = 0; i < settings.planets; i++) {
+const createPlanets = (numberOfPlanets: number) => {
+  for (let i = 0; i < numberOfPlanets; i++) {
     if (i < planetsBuffers.length - 1) {
       continue;
     }
@@ -209,7 +242,7 @@ const createPlanets = () => {
     });
   }
 };
-createPlanets();
+createPlanets(settings.planets);
 
 const renderPlanets = ({
   viewProjectionMatrixUniformBuffer,
@@ -289,40 +322,31 @@ const renderPlanets = ({
   device.queue.submit([commandEncoder.finish()]);
 };
 
+// INFO: this variable is NOT updated automatically when settings.planets change.
+let currentPlanets = settings.planets;
+// INFO: this also is NOT when rotation angles change
+let currentCameraConfigurations: PointerEventsTransformations = {
+  ...pointerEvents,
+};
+
 function frame() {
-  // INFO: this is needed here because of pointer events
-  const cameraEye: vec3 = [0, 0, scale];
-  const cameraLookupCenter: vec3 = [-offsetX, offsetY, 0];
-  const viewProjectionMatrix = getViewProjectionMatrix({
-    cameraRotationX: -rotationAngleY,
-    cameraRotationZ: rotationAngleX,
-    cameraEye,
-    cameraLookupCenter,
-    cameraUp,
-    perspectiveAspectRatio,
-  });
-
-  // TODO: check if using the device.queue.writeBuffer is faster than
-  // creating a buffer each frame.
-  //
-  // Create view projection matrix uniform buffer
-  const viewProjectionMatrixUniformBuffer = device.createBuffer({
-    label: "view projection matrix uniform coordinates buffer",
-    size: MAT4X4_BYTE_LENGTH,
-    usage: GPUBufferUsage.UNIFORM,
-    mappedAtCreation: true,
-  });
-  new Float32Array(viewProjectionMatrixUniformBuffer.getMappedRange()).set(
-    viewProjectionMatrix,
-  );
-  viewProjectionMatrixUniformBuffer.unmap();
-
   // Update Texture View
   passDescriptor.colorAttachments[0].view = context
     .getCurrentTexture()
     .createView();
 
-  createPlanets();
+  // Only recalculate View-Projection matrix if the camera position has changed.
+  if (hasCameraChangedPositions(currentCameraConfigurations, pointerEvents)) {
+    calculateAndSetViewProjectionMatrix(pointerEvents);
+    currentCameraConfigurations = { ...pointerEvents };
+  }
+
+  // Only create new planets if we change the settings.planets UI variable
+  if (currentPlanets !== settings.planets) {
+    createPlanets(settings.planets);
+    currentPlanets = settings.planets;
+  }
+
   renderPlanets({
     viewProjectionMatrixUniformBuffer,
   });

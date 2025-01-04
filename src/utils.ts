@@ -130,13 +130,17 @@ export type PointerEventsCallbackData = {
   offsetY: number;
 };
 
-type PointerEventsInput = {
-  canvas: HTMLCanvasElement;
+export type PointerEventsTransformations = {
   rotationAngleX: number;
   rotationAngleY: number;
   scale: number;
   offsetX: number;
   offsetY: number;
+};
+
+type PointerEventsInput = {
+  canvas: HTMLCanvasElement;
+  pointerEvents: PointerEventsTransformations;
   callback: (data: PointerEventsCallbackData) => void;
 };
 
@@ -144,7 +148,8 @@ type PointerEventsInput = {
 //
 export const setupPointerEvents = (input: PointerEventsInput): void => {
   const { canvas, callback } = input;
-  let { rotationAngleX, rotationAngleY, scale, offsetX, offsetY } = input;
+  let { rotationAngleX, rotationAngleY, scale, offsetX, offsetY } =
+    input.pointerEvents;
 
   let isDragging = false;
   let lastPointerX: number | null = null;
@@ -350,3 +355,26 @@ export const getModelViewProjectionMatrix = (
 
 export const roundUp = (size: number, alignment: number) =>
   Math.ceil(size / alignment) * alignment;
+
+export const hasCameraChangedPositions = (
+  currCameraInfo: PointerEventsTransformations,
+  newCameraInfo: PointerEventsTransformations,
+): boolean => {
+  if (currCameraInfo.rotationAngleX !== newCameraInfo.rotationAngleX) {
+    return true;
+  }
+  if (currCameraInfo.rotationAngleY !== newCameraInfo.rotationAngleY) {
+    return true;
+  }
+  if (currCameraInfo.offsetX !== newCameraInfo.offsetX) {
+    return true;
+  }
+  if (currCameraInfo.offsetX !== newCameraInfo.offsetX) {
+    return true;
+  }
+  if (currCameraInfo.scale !== newCameraInfo.scale) {
+    return true;
+  }
+
+  return false;
+};
