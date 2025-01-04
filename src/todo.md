@@ -19,7 +19,7 @@ var<uniform> viewProjectionMatrix: mat4x4<f32>;
 var<uniform> modelMatrix: mat4x4<f32>;
 ```
 
-## Model (planet) and camera animation
+## (Done) Model (planet) and camera animation
 
 We need to animate the model (using the model matrix) and not the camera (using the view matrix); the camera should move only by the pointer events (or dat.gui) - pan, zoom, rotate - coming from the user.
 
@@ -31,4 +31,7 @@ It's better to have one buffer holding the vertices and textcoords because of pe
 
 Make use of cos, sen and radius to make the planets go around in a orbit-like. Add randomness. (use ellipse formula).
 
+## (Done) Add FPS UI
+
+Check https://github.com/mrdoob/stats.js
 

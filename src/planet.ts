@@ -14,6 +14,11 @@ import { initWebGPUAndCanvas } from "./webgpu";
 import { vec3 } from "gl-matrix";
 import { PlanetTextures } from "./textures";
 import planetWGSL from "./shaders/planet.wgsl?raw";
+import Stats from "stats.js";
+
+const stats = new Stats();
+stats.showPanel(0); // 0: fps, 1: ms, 2: mb, 3+: custom
+document.body.appendChild(stats.dom);
 
 /// Load canvas and GPU devices
 /// If the user/browser doesn't have working WebGPU yet, this will throw early.
@@ -29,7 +34,7 @@ const settings = {
 };
 const setupUI = () => {
   const gui = new GUI();
-  gui.add(settings, "planets", 1, 1200).step(1);
+  gui.add(settings, "planets", 1, 12000).step(1);
 };
 setupUI();
 
@@ -309,9 +314,11 @@ const createPlanets = (numberOfPlanets: number) => {
       continue;
     }
 
+    let radius = Math.random() * 3;
+
     // Create meshes and buffers, randomizing the radius of the planet
     const { vertexBuffer, indexBuffer, indices } = createPlanetAndItsBuffers({
-      radius: Math.random() * 3,
+      radius,
     });
 
     // Create texture buffer
@@ -390,6 +397,8 @@ let currentCameraConfigurations: PointerEventsTransformations = {
 };
 
 function frame() {
+  stats.begin();
+
   // Update Texture View
   passDescriptor.colorAttachments[0].view = context
     .getCurrentTexture()
@@ -408,6 +417,8 @@ function frame() {
   }
 
   renderPlanets();
+
+  stats.end();
 
   // Request Next Frame
   requestAnimationFrame(frame);
