@@ -168,8 +168,8 @@ export const setupPointerEvents = (input: PointerEventsInput): void => {
       rotationAngleY += deltaY * 0.01; // Adjust sensitivity
     } else {
       // Pan otherwise
-      offsetX += deltaX * 0.01;
-      offsetY += deltaY * 0.01;
+      offsetX += deltaX * 0.1;
+      offsetY += deltaY * 0.1;
     }
 
     lastPointerX = event.clientX;

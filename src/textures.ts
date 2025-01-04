@@ -12,6 +12,7 @@ export class PlanetTextures {
   venusTexture: GPUTexture | null = null;
   jupiterTexture: GPUTexture | null = null;
   plutoTexture: GPUTexture | null = null;
+  length: number = 5;
 
   constructor(device: GPUDevice) {
     return (async (): Promise<PlanetTextures> => {
@@ -52,5 +53,9 @@ export class PlanetTextures {
         return this.moonTexture!;
       }
     }
+  }
+
+  getNumberOfTextures(): number {
+    return this.length;
   }
 }

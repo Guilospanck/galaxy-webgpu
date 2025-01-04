@@ -23,7 +23,7 @@ var<uniform> modelMatrix: mat4x4<f32>;
 
 We need to animate the model (using the model matrix) and not the camera (using the view matrix); the camera should move only by the pointer events (or dat.gui) - pan, zoom, rotate - coming from the user.
 
-## Buffers
+## (Done) Buffers
 
 It's better to have one buffer holding the vertices and textcoords because of performance [reasons](https://webgpufundamentals.org/webgpu/lessons/webgpu-optimization.html#a-pack-verts).
 
