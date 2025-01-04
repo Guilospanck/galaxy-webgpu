@@ -27,11 +27,19 @@ We need to animate the model (using the model matrix) and not the camera (using 
 
 It's better to have one buffer holding the vertices and textcoords because of performance [reasons](https://webgpufundamentals.org/webgpu/lessons/webgpu-optimization.html#a-pack-verts).
 
-## Planets movement
+## (Done) Planets movement
 
 Make use of cos, sen and radius to make the planets go around in a orbit-like. Add randomness. (use ellipse formula).
 
 ## (Done) Add FPS UI
 
 Check https://github.com/mrdoob/stats.js
+
+## Add resize observer to the canvas
+
+## Type `planetsBuffers`
+
+## Add parametrization to planet movements
+
+## Add collision
 

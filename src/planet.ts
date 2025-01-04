@@ -1,6 +1,7 @@
 import { MAT4X4_BYTE_LENGTH } from "./constants";
 import { GUI } from "dat.gui";
 import {
+  calculateXYZEllipseCoordinates,
   createSphereMesh,
   getModelMatrix,
   getViewProjectionMatrix,
@@ -11,7 +12,7 @@ import {
   setupPointerEvents,
 } from "./utils";
 import { initWebGPUAndCanvas } from "./webgpu";
-import { vec3 } from "gl-matrix";
+import { mat4, vec3 } from "gl-matrix";
 import { PlanetTextures } from "./textures";
 import planetWGSL from "./shaders/planet.wgsl?raw";
 import Stats from "stats.js";
@@ -266,20 +267,31 @@ const setModelMatrixUniformBuffer = (): GPUBuffer => {
       Float32Array.BYTES_PER_ELEMENT,
   );
 
+  const rotation = new Date().getTime() * 0.0001;
+
   let previousTranslation: vec3 = [0, 0, 0];
   for (let i = 0; i < settings.planets; i++) {
-    // TODO: change this code
-    const modelTranslation: vec3 = vec3.add(emptyVector, previousTranslation, [
-      i < 2 ? 2 : i % 2 === 0 ? i : -i,
-      i < 2 ? 2 : i % 2 === 0 ? i : -i,
-      i < 2 ? 2 : i % 2 === 0 ? i : -i,
-    ]);
-    previousTranslation = modelTranslation;
+    const { x, y, z } = calculateXYZEllipseCoordinates(i % 360);
 
-    const modelMatrix = getModelMatrix({
-      modelTranslation,
-      modelRotationZ: new Date().getTime() * 0.0001 + i,
+    previousTranslation = vec3.add(emptyVector, previousTranslation, [i, i, i]);
+    previousTranslation = vec3.add(emptyVector, previousTranslation, [x, y, z]);
+
+    const translation = new Date().getTime() * 0.0001 + i;
+
+    // Matrix responsible for the planet movement of translation
+    const translationMatrix = mat4.rotateZ(
+      mat4.create(),
+      mat4.create(),
+      translation,
+    );
+    let modelMatrix = getModelMatrix({
+      modelTranslation: previousTranslation,
+      modelRotationZ: rotation,
     });
+
+    modelMatrix = new Float32Array(
+      mat4.multiply(mat4.create(), translationMatrix, modelMatrix),
+    );
 
     allModelMatrices.set(
       modelMatrix,
@@ -314,7 +326,7 @@ const createPlanets = (numberOfPlanets: number) => {
       continue;
     }
 
-    let radius = Math.random() * 3;
+    let radius = Math.random() * 2 + 1;
 
     // Create meshes and buffers, randomizing the radius of the planet
     const { vertexBuffer, indexBuffer, indices } = createPlanetAndItsBuffers({

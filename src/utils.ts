@@ -122,6 +122,52 @@ export const createSphereMesh = ({
   return { positionAndTexCoords, indices, normals };
 };
 
+const eccentricity = 0.7;
+const a = 10;
+const rad = 0.0174532925; // 1 deg = 0.0174532925 rad
+
+///
+///  Ellipse equation:
+//
+//   (x-h)^2/a^2 + (y-k)^2/b^2 = 1
+//
+//   c(h, k)
+//
+//   when c(0, 0), meaning that the ellipse is centered:
+//
+//   x^2/a^2 + y^2/b^2 = 1
+//
+//   x = (1 - y^2/b^2) * a^2
+//   y = (1 - x^2/a^2) * b^2
+//
+//   Radial distance, depends of the angle:
+//
+//   R(theta) = (a*b)/Math.sqrt((b*cost)^2 + (a*sint)^2)
+//
+//   Eccentricity;
+//
+//   e = sqrt(1-b2/a2) => e2 = (1-b2/a2) => e2-1 = b2/a2 => b2 = (e2-1) * a2
+//
+export const calculateXYZEllipseCoordinates = (degreeAngle: number) => {
+  const temp = (Math.pow(eccentricity, 2) - 1) * Math.pow(a, 2);
+  const b = Math.sqrt(temp > 0 ? temp : -1 * temp);
+
+  let theta = degreeAngle * rad;
+
+  // Radial distance
+  const R =
+    (a * b) /
+    Math.sqrt(
+      Math.pow(b * Math.cos(theta), 2) + Math.pow(a * Math.sin(theta), 2),
+    );
+
+  const x = R * Math.cos(theta);
+  const y = R * Math.sin(theta);
+  const z = 1;
+
+  return { x, y, z };
+};
+
 export type PointerEventsCallbackData = {
   rotationAngleX: number;
   rotationAngleY: number;
@@ -280,14 +326,14 @@ export const getModelMatrix = (input: ModelInputParams): Float32Array => {
   } = input;
 
   // Model
-  const modelMatrix = mat4.rotateX(
+  const modelMatrix = mat4.translate(
     mat4.create(),
     mat4.create(),
-    modelRotationX,
+    modelTranslation,
   );
+  mat4.rotateX(modelMatrix, modelMatrix, modelRotationX);
   mat4.rotateY(modelMatrix, modelMatrix, modelRotationY);
   mat4.rotateZ(modelMatrix, modelMatrix, modelRotationZ);
-  mat4.translate(modelMatrix, modelMatrix, modelTranslation);
 
   return new Float32Array(modelMatrix);
 };
