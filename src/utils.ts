@@ -61,9 +61,9 @@ export const createSphereMesh = ({
   latBands: number;
   longBands: number;
 }) => {
-  const vertices = [];
+  // TODO: once we are using normals, we can also add it to the same buffer of pos | texCoords | normals
+  const positionAndTexCoords = [];
   const indices = [];
-  const texCoords = [];
   const normals = [];
 
   for (let lat = 0; lat <= latBands; ++lat) {
@@ -83,9 +83,8 @@ export const createSphereMesh = ({
       const u = lon / longBands;
       const v = lat / latBands;
 
-      vertices.push(radius * x, radius * y, radius * z);
+      positionAndTexCoords.push(radius * x, radius * y, radius * z, u, v);
       normals.push(x, y, z);
-      texCoords.push(u, v);
     }
   }
 
@@ -120,7 +119,7 @@ export const createSphereMesh = ({
     }
   }
 
-  return { vertices, indices, texCoords, normals };
+  return { positionAndTexCoords, indices, normals };
 };
 
 export type PointerEventsCallbackData = {

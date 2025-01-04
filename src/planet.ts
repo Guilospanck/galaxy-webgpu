@@ -62,9 +62,8 @@ const sampler = device.createSampler({
 });
 
 type PlanetBuffers = {
-  vertexBuffer: GPUBuffer;
+  vertexBuffer: GPUBuffer; // position and texCoords
   indexBuffer: GPUBuffer;
-  texCoordBuffer: GPUBuffer;
   indices: number[];
 };
 
@@ -77,20 +76,20 @@ const createPlanetAndItsBuffers = ({
   latBands?: number;
   longBands?: number;
 }): PlanetBuffers => {
-  const { vertices, indices, texCoords } = createSphereMesh({
+  const { positionAndTexCoords, indices } = createSphereMesh({
     radius,
     latBands,
     longBands,
   });
 
-  // Create Vertex Buffer
+  // Create Position and TexCoords Buffer (VERTEX BUFFER)
   const vertexBuffer = device.createBuffer({
     label: "vertices buffer",
-    size: vertices.length * Float32Array.BYTES_PER_ELEMENT,
+    size: positionAndTexCoords.length * Float32Array.BYTES_PER_ELEMENT,
     usage: GPUBufferUsage.VERTEX,
     mappedAtCreation: true,
   });
-  new Float32Array(vertexBuffer.getMappedRange()).set(vertices);
+  new Float32Array(vertexBuffer.getMappedRange()).set(positionAndTexCoords);
   vertexBuffer.unmap();
 
   // Create Index Buffer
@@ -103,20 +102,9 @@ const createPlanetAndItsBuffers = ({
   new Uint32Array(indexBuffer.getMappedRange()).set(indices);
   indexBuffer.unmap();
 
-  // Create Texture Coordinates Buffer
-  const texCoordBuffer = device.createBuffer({
-    label: "texture coordinates buffer",
-    size: texCoords.length * Float32Array.BYTES_PER_ELEMENT,
-    usage: GPUBufferUsage.VERTEX,
-    mappedAtCreation: true,
-  });
-  new Float32Array(texCoordBuffer.getMappedRange()).set(texCoords);
-  texCoordBuffer.unmap();
-
   return {
     vertexBuffer,
     indexBuffer,
-    texCoordBuffer,
     indices,
   };
 };
@@ -134,10 +122,9 @@ const createPlanets = () => {
     }
 
     // Create meshes and buffers
-    const { vertexBuffer, indexBuffer, texCoordBuffer, indices } =
-      createPlanetAndItsBuffers({
-        radius: Math.random() * 3,
-      });
+    const { vertexBuffer, indexBuffer, indices } = createPlanetAndItsBuffers({
+      radius: Math.random() * 3,
+    });
 
     // Create texture buffer
     const texture = textures.getTextureBasedOnIndex(i);
@@ -146,7 +133,6 @@ const createPlanets = () => {
     planetsBuffers.push({
       vertexBuffer,
       indexBuffer,
-      texCoordBuffer,
       indices,
       texture,
     });
@@ -174,8 +160,7 @@ const renderPlanets = ({
 
   let previousTranslation: vec3 = [0, 0, 0];
   for (let i = 0; i < settings.planets; i++) {
-    const { vertexBuffer, indexBuffer, texCoordBuffer, indices, texture } =
-      planetsBuffers[i];
+    const { vertexBuffer, indexBuffer, indices, texture } = planetsBuffers[i];
 
     const modelTranslation: vec3 = vec3.add(
       emptyVector,
@@ -222,8 +207,7 @@ const renderPlanets = ({
       ],
     });
 
-    renderPass.setVertexBuffer(0, vertexBuffer);
-    renderPass.setVertexBuffer(1, texCoordBuffer);
+    renderPass.setVertexBuffer(0, vertexBuffer); // position and texCoords
     renderPass.setIndexBuffer(indexBuffer, "uint32");
     renderPass.setBindGroup(0, bindGroup);
     renderPass.drawIndexed(indices.length);
@@ -245,12 +229,21 @@ const pipeline = device.createRenderPipeline({
     entryPoint: "main",
     buffers: [
       {
-        arrayStride: 3 * Float32Array.BYTES_PER_ELEMENT, // position
-        attributes: [{ shaderLocation: 0, format: "float32x3", offset: 0 }],
-      },
-      {
-        arrayStride: 2 * Float32Array.BYTES_PER_ELEMENT, // texCoord
-        attributes: [{ shaderLocation: 1, format: "float32x2", offset: 0 }],
+        arrayStride: 5 * Float32Array.BYTES_PER_ELEMENT, // 3 position + 2 texCoord
+        attributes: [
+          // position
+          {
+            shaderLocation: 0,
+            format: "float32x3",
+            offset: 0,
+          },
+          // texCoord
+          {
+            shaderLocation: 1,
+            format: "float32x2",
+            offset: 3 * Float32Array.BYTES_PER_ELEMENT,
+          },
+        ],
       },
     ],
   },
