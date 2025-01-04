@@ -7,6 +7,7 @@ import {
   hasCameraChangedPositions,
   PointerEventsCallbackData,
   PointerEventsTransformations,
+  roundUp,
   setupPointerEvents,
 } from "./utils";
 import { initWebGPUAndCanvas } from "./webgpu";
@@ -74,10 +75,42 @@ const depthTexture = device.createTexture({
   usage: GPUTextureUsage.RENDER_ATTACHMENT,
 });
 
+// Custom bind group that sets model matrix uniform buffer with a dynamic offset
+const bindGroupLayout = device.createBindGroupLayout({
+  label: "custom bind group layout",
+  entries: [
+    {
+      binding: 0, // View-Projection matrix buffer
+      visibility: GPUShaderStage.VERTEX,
+      buffer: {
+        type: "uniform",
+      },
+    },
+    {
+      binding: 1, // Model matrix buffer
+      visibility: GPUShaderStage.VERTEX,
+      buffer: {
+        type: "uniform",
+        hasDynamicOffset: true, // Enable dynamic offsets
+      },
+    },
+    {
+      binding: 2, // Sampler
+      visibility: GPUShaderStage.FRAGMENT,
+      sampler: {},
+    },
+    {
+      binding: 3, // Texture
+      visibility: GPUShaderStage.FRAGMENT,
+      texture: {},
+    },
+  ],
+});
+
 // Pipeline
 const pipeline = device.createRenderPipeline({
   label: "render pipeline",
-  layout: "auto",
+  layout: device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
   vertex: {
     module: shaderModule,
     entryPoint: "main",
@@ -165,6 +198,13 @@ const calculateAndSetViewProjectionMatrix = ({
 };
 calculateAndSetViewProjectionMatrix(pointerEvents);
 
+// Model Matrix Uniform Buffer
+let modelMatrixUniformBufferSize = MAT4X4_BYTE_LENGTH; // for each planet, we have only a MVP matrix (mat4)
+modelMatrixUniformBufferSize = roundUp(
+  modelMatrixUniformBufferSize,
+  device.limits.minUniformBufferOffsetAlignment,
+); // uniform buffer needs to be aligned correctly (it works without it if you don't use dynamic offsets)
+
 type PlanetBuffers = {
   vertexBuffer: GPUBuffer; // position and texCoords
   indexBuffer: GPUBuffer;
@@ -213,6 +253,50 @@ const createPlanetAndItsBuffers = ({
   };
 };
 
+const setModelMatrixUniformBuffer = (): GPUBuffer => {
+  // Fill in all uniform MVP matrices beforehand so you don't have to
+  // `device.queue.writeBuffer` (or direct mapping) for each one of the planets.
+  const allModelMatrices = new Float32Array(
+    (modelMatrixUniformBufferSize * settings.planets) /
+      Float32Array.BYTES_PER_ELEMENT,
+  );
+
+  let previousTranslation: vec3 = [0, 0, 0];
+  for (let i = 0; i < settings.planets; i++) {
+    // TODO: change this code
+    const modelTranslation: vec3 = vec3.add(emptyVector, previousTranslation, [
+      i < 2 ? 2 : i % 2 === 0 ? i : -i,
+      i < 2 ? 2 : i % 2 === 0 ? i : -i,
+      i < 2 ? 2 : i % 2 === 0 ? i : -i,
+    ]);
+    previousTranslation = modelTranslation;
+
+    const modelMatrix = getModelMatrix({
+      modelTranslation,
+      modelRotationZ: new Date().getTime() * 0.0001 + i,
+    });
+
+    allModelMatrices.set(
+      modelMatrix,
+      i * (modelMatrixUniformBufferSize / Float32Array.BYTES_PER_ELEMENT),
+    );
+  }
+
+  // Add those matrices to the uniform buffer
+  const modelMatrixUniformBuffer = device.createBuffer({
+    label: "model matrix uniform coordinates buffer",
+    size: modelMatrixUniformBufferSize * settings.planets,
+    usage: GPUBufferUsage.UNIFORM,
+    mappedAtCreation: true,
+  });
+  new Float32Array(modelMatrixUniformBuffer.getMappedRange()).set(
+    allModelMatrices,
+  );
+  modelMatrixUniformBuffer.unmap();
+
+  return modelMatrixUniformBuffer;
+};
+
 /// INFO: One point about this: it is saving the planets' state in memory (planetsBuffer array)
 /// Therefore in the case that we select to render less planets than we currently have,
 /// it will still keep those states in memory.
@@ -244,11 +328,7 @@ const createPlanets = (numberOfPlanets: number) => {
 };
 createPlanets(settings.planets);
 
-const renderPlanets = ({
-  viewProjectionMatrixUniformBuffer,
-}: {
-  viewProjectionMatrixUniformBuffer: GPUBuffer;
-}) => {
+const renderPlanets = () => {
   // Create Command Encoder
   const commandEncoder = device.createCommandEncoder({
     label: "command encoder",
@@ -258,34 +338,12 @@ const renderPlanets = ({
 
   renderPass.setPipeline(pipeline);
 
-  let previousTranslation: vec3 = [0, 0, 0];
+  const modelMatrixUniformBuffer = setModelMatrixUniformBuffer();
+
   for (let i = 0; i < settings.planets; i++) {
+    const dynamicOffset = i * modelMatrixUniformBufferSize;
+
     const { vertexBuffer, indexBuffer, indices, texture } = planetsBuffers[i];
-
-    // TODO: change this code
-    const modelTranslation: vec3 = vec3.add(emptyVector, previousTranslation, [
-      i < 2 ? 2 : i % 2 === 0 ? i : -i,
-      i < 2 ? 2 : i % 2 === 0 ? i : -i,
-      i < 2 ? 2 : i % 2 === 0 ? i : -i,
-    ]);
-    previousTranslation = modelTranslation;
-
-    const modelMatrix = getModelMatrix({
-      modelTranslation,
-      modelRotationZ: new Date().getTime() * 0.0001 + i,
-    });
-
-    // Create model matrix uniform buffer
-    const modelMatrixUniformBuffer = device.createBuffer({
-      label: "model matrix uniform coordinates buffer",
-      size: MAT4X4_BYTE_LENGTH,
-      usage: GPUBufferUsage.UNIFORM,
-      mappedAtCreation: true,
-    });
-    new Float32Array(modelMatrixUniformBuffer.getMappedRange()).set(
-      modelMatrix,
-    );
-    modelMatrixUniformBuffer.unmap();
 
     // Bind Group
     const bindGroup = device.createBindGroup({
@@ -302,6 +360,7 @@ const renderPlanets = ({
           binding: 1,
           resource: {
             buffer: modelMatrixUniformBuffer,
+            size: modelMatrixUniformBufferSize,
           },
         },
         { binding: 2, resource: sampler },
@@ -311,7 +370,7 @@ const renderPlanets = ({
 
     renderPass.setVertexBuffer(0, vertexBuffer); // position and texCoords
     renderPass.setIndexBuffer(indexBuffer, "uint32");
-    renderPass.setBindGroup(0, bindGroup);
+    renderPass.setBindGroup(0, bindGroup, [dynamicOffset]);
     renderPass.drawIndexed(indices.length);
   }
 
@@ -322,6 +381,7 @@ const renderPlanets = ({
   device.queue.submit([commandEncoder.finish()]);
 };
 
+/// Variables to check for conditional rendering
 // INFO: this variable is NOT updated automatically when settings.planets change.
 let currentPlanets = settings.planets;
 // INFO: this also is NOT when rotation angles change
@@ -347,9 +407,7 @@ function frame() {
     currentPlanets = settings.planets;
   }
 
-  renderPlanets({
-    viewProjectionMatrixUniformBuffer,
-  });
+  renderPlanets();
 
   // Request Next Frame
   requestAnimationFrame(frame);
