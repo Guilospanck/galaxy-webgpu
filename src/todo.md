@@ -1,4 +1,4 @@
-## MVP matrix
+## (Done) MVP matrix
 
 The view-projection matrix should be the same for all planets because:
 
@@ -14,8 +14,8 @@ Therefore, we need to update the `uniform` to be specific for each planet. We wi
 @group(0) @binding(0)
 var<uniform> viewProjectionMatrix: mat4x4<f32>;
 
-// This is per-object. Needs to be updated each frame
-@group(0) @binding(1)
+// This is per-object. Needs to be updated each frame (Different bind group)
+@group(1) @binding(0)
 var<uniform> modelMatrix: mat4x4<f32>;
 ```
 
@@ -29,6 +29,6 @@ It's better to have one buffer holding the vertices and textcoords because of pe
 
 ## Planets movement
 
-Make use of cos, sen and radius to make the planets go around in a orbit-like. Add randomness.
+Make use of cos, sen and radius to make the planets go around in a orbit-like. Add randomness. (use ellipse formula).
 
 

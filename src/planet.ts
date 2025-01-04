@@ -2,7 +2,8 @@ import { MAT4X4_BYTE_LENGTH } from "./constants";
 import { GUI } from "dat.gui";
 import {
   createSphereMesh,
-  getModelViewProjectionMatrix,
+  getModelMatrix,
+  getViewProjectionMatrix,
   PointerEventsCallbackData,
   setupPointerEvents,
 } from "./utils";
@@ -53,6 +54,12 @@ console.assert(shaderModule !== null, "Failed to compile shader code");
 
 // INFO: we are using an async constructor
 const textures = await new PlanetTextures(device);
+
+const sampler = device.createSampler({
+  label: "sampler element",
+  magFilter: "linear",
+  minFilter: "linear",
+});
 
 type PlanetBuffers = {
   vertexBuffer: GPUBuffer;
@@ -147,22 +154,14 @@ const createPlanets = () => {
 };
 createPlanets();
 
-const createRenderedPlanets = ({
-  cameraUp,
-  cameraEye,
-  cameraLookupCenter,
+const renderPlanets = ({
   translationVec,
   emptyVector,
-  perspectiveAspectRatio,
-  movement,
+  viewProjectionMatrixUniformBuffer,
 }: {
-  cameraUp: vec3;
-  cameraEye: vec3;
-  cameraLookupCenter: vec3;
   translationVec: vec3;
   emptyVector: vec3;
-  perspectiveAspectRatio: number;
-  movement: number;
+  viewProjectionMatrixUniformBuffer: GPUBuffer;
 }) => {
   // Create Command Encoder
   const commandEncoder = device.createCommandEncoder({
@@ -185,26 +184,21 @@ const createRenderedPlanets = ({
     );
     previousTranslation = modelTranslation;
 
-    const mvpMatrix = getModelViewProjectionMatrix({
-      cameraRotationX: rotationAngleX,
-      cameraRotationY: rotationAngleY,
-      cameraRotationZ: movement * i + 0.0001,
+    const modelMatrix = getModelMatrix({
       modelTranslation,
-      cameraEye,
-      cameraLookupCenter,
-      cameraUp,
-      perspectiveAspectRatio,
     });
 
-    // Create uniform buffer
-    const uniformBuffer = device.createBuffer({
-      label: "uniform coordinates buffer",
+    // Create model matrix uniform buffer
+    const modelMatrixUniformBuffer = device.createBuffer({
+      label: "model matrix uniform coordinates buffer",
       size: MAT4X4_BYTE_LENGTH,
       usage: GPUBufferUsage.UNIFORM,
       mappedAtCreation: true,
     });
-    new Float32Array(uniformBuffer.getMappedRange()).set(mvpMatrix);
-    uniformBuffer.unmap();
+    new Float32Array(modelMatrixUniformBuffer.getMappedRange()).set(
+      modelMatrix,
+    );
+    modelMatrixUniformBuffer.unmap();
 
     // Bind Group
     const bindGroup = device.createBindGroup({
@@ -214,11 +208,17 @@ const createRenderedPlanets = ({
         {
           binding: 0,
           resource: {
-            buffer: uniformBuffer,
+            buffer: viewProjectionMatrixUniformBuffer,
           },
         },
-        { binding: 1, resource: sampler },
-        { binding: 2, resource: texture.createView() },
+        {
+          binding: 1,
+          resource: {
+            buffer: modelMatrixUniformBuffer,
+          },
+        },
+        { binding: 2, resource: sampler },
+        { binding: 3, resource: texture.createView() },
       ],
     });
 
@@ -235,12 +235,6 @@ const createRenderedPlanets = ({
   // Submit Commands
   device.queue.submit([commandEncoder.finish()]);
 };
-
-const sampler = device.createSampler({
-  label: "sampler element",
-  magFilter: "linear",
-  minFilter: "linear",
-});
 
 // Pipeline
 const pipeline = device.createRenderPipeline({
@@ -305,11 +299,30 @@ const translationVec: vec3 = [4, 0, 0];
 const cameraUp: vec3 = [0, 1, 0];
 
 function frame() {
-  let movement = new Date().getTime() * 0.0001;
-
+  // INFO: this is needed here because of pointer events
   // Camera-related (for the view matrix)
   const cameraEye: vec3 = [0, 0, scale];
   const cameraLookupCenter: vec3 = [-offsetX, offsetY, 0];
+  const viewProjectionMatrix = getViewProjectionMatrix({
+    cameraRotationX: rotationAngleX,
+    cameraRotationY: rotationAngleY,
+    cameraEye,
+    cameraLookupCenter,
+    cameraUp,
+    perspectiveAspectRatio,
+  });
+
+  // Create view projection matrix uniform buffer
+  const viewProjectionMatrixUniformBuffer = device.createBuffer({
+    label: "view projection matrix uniform coordinates buffer",
+    size: MAT4X4_BYTE_LENGTH,
+    usage: GPUBufferUsage.UNIFORM,
+    mappedAtCreation: true,
+  });
+  new Float32Array(viewProjectionMatrixUniformBuffer.getMappedRange()).set(
+    viewProjectionMatrix,
+  );
+  viewProjectionMatrixUniformBuffer.unmap();
 
   // Update Texture View
   passDescriptor.colorAttachments[0].view = context
@@ -317,14 +330,10 @@ function frame() {
     .createView();
 
   createPlanets();
-  createRenderedPlanets({
-    cameraUp,
-    cameraEye,
-    cameraLookupCenter,
+  renderPlanets({
     translationVec,
     emptyVector,
-    perspectiveAspectRatio,
-    movement,
+    viewProjectionMatrixUniformBuffer,
   });
 
   // Request Next Frame

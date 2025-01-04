@@ -9,19 +9,22 @@ struct VertexOutput {
 }
 
 @group(0) @binding(0)
-var<uniform> mvpMatrix: mat4x4<f32>;
+var<uniform> viewProjectionMatrix: mat4x4<f32>;
+
+@group(0) @binding(1)
+var<uniform> modelMatrix: mat4x4<f32>;
 
 @vertex
 fn main(input: VertexInput) -> VertexOutput {
   var output: VertexOutput;
-  output.position = mvpMatrix * vec4<f32>(input.position, 1.0);
+  output.position = viewProjectionMatrix * modelMatrix * vec4<f32>(input.position, 1.0);
   output.uv = input.texCoord;
   return output;
 }
 
-@group(0) @binding(1)
-var textureSampler: sampler;
 @group(0) @binding(2)
+var textureSampler: sampler;
+@group(0) @binding(3)
 var sphereTexture: texture_2d<f32>;
 
 @fragment

@@ -205,18 +205,87 @@ export const setupPointerEvents = (input: PointerEventsInput): void => {
   });
 };
 
-type ModelViewProjectionInputParams = {
+type ModelInputParams = {
   modelRotationX?: number;
   modelRotationY?: number;
   modelRotationZ?: number;
+  modelTranslation?: vec3;
+};
+
+type ViewProjectionInputParams = {
   cameraRotationX?: number;
   cameraRotationY?: number;
   cameraRotationZ?: number;
-  modelTranslation?: vec3;
   cameraEye?: vec3;
   cameraLookupCenter?: vec3;
   cameraUp?: vec3;
   perspectiveAspectRatio: number;
+};
+
+type ModelViewProjectionInputParams = ModelInputParams &
+  ViewProjectionInputParams;
+
+export const getViewProjectionMatrix = (
+  input: ViewProjectionInputParams,
+): Float32Array => {
+  const {
+    cameraRotationX = 0,
+    cameraRotationY = 0,
+    cameraRotationZ = 0,
+    cameraEye = [0, 0, 4],
+    cameraLookupCenter = [0, 0, 0],
+    cameraUp = [0, 1, 0],
+    perspectiveAspectRatio,
+  } = input;
+
+  // View
+  const viewMatrix = mat4.lookAt(
+    mat4.create(),
+    cameraEye,
+    cameraLookupCenter,
+    cameraUp,
+  );
+  mat4.rotateX(viewMatrix, viewMatrix, cameraRotationX);
+  mat4.rotateY(viewMatrix, viewMatrix, cameraRotationY);
+  mat4.rotateZ(viewMatrix, viewMatrix, cameraRotationZ);
+
+  // Projection
+  const projectionMatrix = mat4.perspective(
+    mat4.create(),
+    Math.PI / 4,
+    perspectiveAspectRatio,
+    NEAR_FRUSTUM,
+    FAR_FRUSTUM,
+  );
+
+  const viewProjectionMatrix = mat4.multiply(
+    mat4.create(),
+    projectionMatrix,
+    viewMatrix,
+  );
+
+  return new Float32Array(viewProjectionMatrix);
+};
+
+export const getModelMatrix = (input: ModelInputParams): Float32Array => {
+  const {
+    modelRotationX = 0,
+    modelRotationY = 0,
+    modelRotationZ = 0,
+    modelTranslation = [0, 0, 0],
+  } = input;
+
+  // Model
+  const modelMatrix = mat4.rotateX(
+    mat4.create(),
+    mat4.create(),
+    modelRotationX,
+  );
+  mat4.rotateY(modelMatrix, modelMatrix, modelRotationY);
+  mat4.rotateZ(modelMatrix, modelMatrix, modelRotationZ);
+  mat4.translate(modelMatrix, modelMatrix, modelTranslation);
+
+  return new Float32Array(modelMatrix);
 };
 
 /// Calculates and returns the model-view-projection matrix
@@ -253,39 +322,28 @@ export const getModelViewProjectionMatrix = (
   } = input;
 
   // Model
-  const modelMatrix = mat4.rotateX(
-    mat4.create(),
-    mat4.create(),
+  const modelMatrix = getModelMatrix({
     modelRotationX,
-  );
-  mat4.rotateY(modelMatrix, modelMatrix, modelRotationY);
-  mat4.rotateZ(modelMatrix, modelMatrix, modelRotationZ);
-  mat4.translate(modelMatrix, modelMatrix, modelTranslation);
+    modelRotationY,
+    modelRotationZ,
+    modelTranslation,
+  });
 
-  // View
-  const viewMatrix = mat4.lookAt(
-    mat4.create(),
+  // View-Projection matrix
+  const viewProjectionMatrix = getViewProjectionMatrix({
+    cameraRotationX,
+    cameraRotationY,
+    cameraRotationZ,
     cameraEye,
     cameraLookupCenter,
     cameraUp,
-  );
-  mat4.rotateX(viewMatrix, viewMatrix, cameraRotationX);
-  mat4.rotateY(viewMatrix, viewMatrix, cameraRotationY);
-  mat4.rotateZ(viewMatrix, viewMatrix, cameraRotationZ);
-
-  // Projection
-  const projectionMatrix = mat4.perspective(
-    mat4.create(),
-    Math.PI / 4,
     perspectiveAspectRatio,
-    NEAR_FRUSTUM,
-    FAR_FRUSTUM,
-  );
+  });
 
   const mvpMatrix = mat4.multiply(
     mat4.create(),
-    projectionMatrix,
-    mat4.multiply(mat4.create(), viewMatrix, modelMatrix),
+    viewProjectionMatrix,
+    modelMatrix,
   );
 
   return new Float32Array(mvpMatrix);
