@@ -5,12 +5,13 @@ import { FAR_FRUSTUM, NEAR_FRUSTUM } from "./constants";
 const webGPUTextureFromImageBitmapOrCanvas = (
   gpuDevice: GPUDevice,
   source: ImageBitmap,
+  url: string,
 ) => {
   const textureDescriptor = {
     // Unlike in WebGL, the size of our texture must be set at texture creation time.
     // This means we have to wait until the image is loaded to create the texture, since we won't
     // know the size until then.
-    label: `texture element ${source}`,
+    label: `texture element ${url}`,
     size: { width: source.width, height: source.height },
     format: "rgba8unorm" as GPUTextureFormat,
     usage:
@@ -38,7 +39,7 @@ export const webGPUTextureFromImageUrl = async (
   const blob = await response.blob();
   const imgBitmap = await createImageBitmap(blob);
 
-  return webGPUTextureFromImageBitmapOrCanvas(gpuDevice, imgBitmap);
+  return webGPUTextureFromImageBitmapOrCanvas(gpuDevice, imgBitmap, url);
 };
 
 /// Sphere generation
@@ -51,7 +52,7 @@ export const webGPUTextureFromImageUrl = async (
 /// @param{longBands}: the number of longitude bands (vertical slices) that the sphere will have. The greater this value,
 /// the smoother the sphere, but also demands more computationally.
 //
-export const createSphere = ({
+export const createSphereMesh = ({
   radius,
   latBands,
   longBands,

@@ -1,10 +1,9 @@
 import { MAT4X4_BYTE_LENGTH } from "./constants";
 import { GUI } from "dat.gui";
 import {
-  createSphere,
+  createSphereMesh,
   getModelViewProjectionMatrix,
   PointerEventsCallbackData,
-  roundUp,
   setupPointerEvents,
 } from "./utils";
 import { initWebGPUAndCanvas } from "./webgpu";
@@ -48,51 +47,194 @@ setupPointerEvents({
   callback: callbackUpdatePointerEvents,
 });
 
-const { vertices, indices, texCoords } = createSphere({
-  radius: 1,
-  latBands: 40,
-  longBands: 40,
-});
-
-// Create Vertex Buffer
-const vertexBuffer = device.createBuffer({
-  label: "vertices buffer",
-  size: vertices.length * Float32Array.BYTES_PER_ELEMENT,
-  usage: GPUBufferUsage.VERTEX,
-  mappedAtCreation: true,
-});
-new Float32Array(vertexBuffer.getMappedRange()).set(vertices);
-vertexBuffer.unmap();
-
-// Create Index Buffer
-const indexBuffer = device.createBuffer({
-  label: "index buffer",
-  size: indices.length * Float32Array.BYTES_PER_ELEMENT,
-  usage: GPUBufferUsage.INDEX,
-  mappedAtCreation: true,
-});
-new Uint32Array(indexBuffer.getMappedRange()).set(indices);
-indexBuffer.unmap();
-
-// Create Texture Coordinates Buffer
-const texCoordBuffer = device.createBuffer({
-  label: "texture coordinates buffer",
-  size: texCoords.length * Float32Array.BYTES_PER_ELEMENT,
-  usage: GPUBufferUsage.VERTEX,
-  mappedAtCreation: true,
-});
-new Float32Array(texCoordBuffer.getMappedRange()).set(texCoords);
-texCoordBuffer.unmap();
-
-// Uniform Buffer
-let uniformBufferSize = MAT4X4_BYTE_LENGTH; // for each planet, we have only a MVP matrix (mat4)
-uniformBufferSize = roundUp(
-  uniformBufferSize,
-  device.limits.minUniformBufferOffsetAlignment,
-); // uniform buffer needs to be aligned correctly (it works without it if you don't use dynamic offsets)
+// Create Shader Module
+const shaderModule = device.createShaderModule({ code: planetWGSL });
+console.assert(shaderModule !== null, "Failed to compile shader code");
 
 // INFO: we are using an async constructor
 const textures = await new PlanetTextures(device);
+
+type PlanetBuffers = {
+  vertexBuffer: GPUBuffer;
+  indexBuffer: GPUBuffer;
+  texCoordBuffer: GPUBuffer;
+  indices: number[];
+};
+
+const createPlanetAndItsBuffers = ({
+  radius = 1,
+  latBands = 40,
+  longBands = 40,
+}: {
+  radius?: number;
+  latBands?: number;
+  longBands?: number;
+}): PlanetBuffers => {
+  const { vertices, indices, texCoords } = createSphereMesh({
+    radius,
+    latBands,
+    longBands,
+  });
+
+  // Create Vertex Buffer
+  const vertexBuffer = device.createBuffer({
+    label: "vertices buffer",
+    size: vertices.length * Float32Array.BYTES_PER_ELEMENT,
+    usage: GPUBufferUsage.VERTEX,
+    mappedAtCreation: true,
+  });
+  new Float32Array(vertexBuffer.getMappedRange()).set(vertices);
+  vertexBuffer.unmap();
+
+  // Create Index Buffer
+  const indexBuffer = device.createBuffer({
+    label: "index buffer",
+    size: indices.length * Float32Array.BYTES_PER_ELEMENT,
+    usage: GPUBufferUsage.INDEX,
+    mappedAtCreation: true,
+  });
+  new Uint32Array(indexBuffer.getMappedRange()).set(indices);
+  indexBuffer.unmap();
+
+  // Create Texture Coordinates Buffer
+  const texCoordBuffer = device.createBuffer({
+    label: "texture coordinates buffer",
+    size: texCoords.length * Float32Array.BYTES_PER_ELEMENT,
+    usage: GPUBufferUsage.VERTEX,
+    mappedAtCreation: true,
+  });
+  new Float32Array(texCoordBuffer.getMappedRange()).set(texCoords);
+  texCoordBuffer.unmap();
+
+  return {
+    vertexBuffer,
+    indexBuffer,
+    texCoordBuffer,
+    indices,
+  };
+};
+
+const planetsBuffers = [];
+/// One point about this: it is saving the planets' state in memory (planetsBuffer array)
+/// Therefore in the case that we select to render less planets than we currently have,
+/// it will still keep those states in memory.
+/// This is a trade-off between saving this states in memory or re-creating them.
+///
+const createPlanets = () => {
+  for (let i = 0; i < settings.planets; i++) {
+    if (i < planetsBuffers.length - 1) {
+      continue;
+    }
+
+    // Create meshes and buffers
+    const { vertexBuffer, indexBuffer, texCoordBuffer, indices } =
+      createPlanetAndItsBuffers({
+        radius: Math.random() * 3,
+      });
+
+    // Create texture buffer
+    const texture = textures.getTextureBasedOnIndex(i);
+    console.assert(texture !== null, `Failed to load texture ${i}`);
+
+    planetsBuffers.push({
+      vertexBuffer,
+      indexBuffer,
+      texCoordBuffer,
+      indices,
+      texture,
+    });
+  }
+};
+createPlanets();
+
+const createRenderedPlanets = ({
+  cameraUp,
+  cameraEye,
+  cameraLookupCenter,
+  translationVec,
+  emptyVector,
+  perspectiveAspectRatio,
+  movement,
+}: {
+  cameraUp: vec3;
+  cameraEye: vec3;
+  cameraLookupCenter: vec3;
+  translationVec: vec3;
+  emptyVector: vec3;
+  perspectiveAspectRatio: number;
+  movement: number;
+}) => {
+  // Create Command Encoder
+  const commandEncoder = device.createCommandEncoder({
+    label: "command encoder",
+  });
+
+  const renderPass = commandEncoder.beginRenderPass(passDescriptor);
+
+  renderPass.setPipeline(pipeline);
+
+  let previousTranslation: vec3 = [0, 0, 0];
+  for (let i = 0; i < settings.planets; i++) {
+    const { vertexBuffer, indexBuffer, texCoordBuffer, indices, texture } =
+      planetsBuffers[i];
+
+    const modelTranslation: vec3 = vec3.add(
+      emptyVector,
+      previousTranslation,
+      translationVec,
+    );
+    previousTranslation = modelTranslation;
+
+    const mvpMatrix = getModelViewProjectionMatrix({
+      cameraRotationX: rotationAngleX,
+      cameraRotationY: rotationAngleY,
+      cameraRotationZ: movement * i + 0.0001,
+      modelTranslation,
+      cameraEye,
+      cameraLookupCenter,
+      cameraUp,
+      perspectiveAspectRatio,
+    });
+
+    // Create uniform buffer
+    const uniformBuffer = device.createBuffer({
+      label: "uniform coordinates buffer",
+      size: MAT4X4_BYTE_LENGTH,
+      usage: GPUBufferUsage.UNIFORM,
+      mappedAtCreation: true,
+    });
+    new Float32Array(uniformBuffer.getMappedRange()).set(mvpMatrix);
+    uniformBuffer.unmap();
+
+    // Bind Group
+    const bindGroup = device.createBindGroup({
+      label: "bind group element",
+      layout: pipeline.getBindGroupLayout(0),
+      entries: [
+        {
+          binding: 0,
+          resource: {
+            buffer: uniformBuffer,
+          },
+        },
+        { binding: 1, resource: sampler },
+        { binding: 2, resource: texture.createView() },
+      ],
+    });
+
+    renderPass.setVertexBuffer(0, vertexBuffer);
+    renderPass.setVertexBuffer(1, texCoordBuffer);
+    renderPass.setIndexBuffer(indexBuffer, "uint32");
+    renderPass.setBindGroup(0, bindGroup);
+    renderPass.drawIndexed(indices.length);
+  }
+
+  // Finalise render pass
+  renderPass.end();
+
+  // Submit Commands
+  device.queue.submit([commandEncoder.finish()]);
+};
 
 const sampler = device.createSampler({
   label: "sampler element",
@@ -100,38 +242,10 @@ const sampler = device.createSampler({
   minFilter: "linear",
 });
 
-// Create Shader Module
-const shaderModule = device.createShaderModule({ code: planetWGSL });
-console.assert(shaderModule !== null, "Failed to compile shader code");
-
-const bindGroupLayout = device.createBindGroupLayout({
-  label: "custom bind group layout",
-  entries: [
-    {
-      binding: 0, // Uniform buffer
-      visibility: GPUShaderStage.VERTEX,
-      buffer: {
-        type: "uniform",
-        hasDynamicOffset: true, // Enable dynamic offsets
-      },
-    },
-    {
-      binding: 1, // Sampler
-      visibility: GPUShaderStage.FRAGMENT,
-      sampler: {},
-    },
-    {
-      binding: 2, // Texture
-      visibility: GPUShaderStage.FRAGMENT,
-      texture: {},
-    },
-  ],
-});
-
 // Pipeline
 const pipeline = device.createRenderPipeline({
   label: "render pipeline",
-  layout: device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
+  layout: "auto",
   vertex: {
     module: shaderModule,
     entryPoint: "main",
@@ -202,87 +316,16 @@ function frame() {
     .getCurrentTexture()
     .createView();
 
-  // Create Command Encoder
-  const commandEncoder = device.createCommandEncoder({
-    label: "command encoder",
+  createPlanets();
+  createRenderedPlanets({
+    cameraUp,
+    cameraEye,
+    cameraLookupCenter,
+    translationVec,
+    emptyVector,
+    perspectiveAspectRatio,
+    movement,
   });
-
-  const renderPass = commandEncoder.beginRenderPass(passDescriptor);
-  renderPass.setPipeline(pipeline);
-  renderPass.setVertexBuffer(0, vertexBuffer);
-  renderPass.setVertexBuffer(1, texCoordBuffer);
-  renderPass.setIndexBuffer(indexBuffer, "uint32");
-
-  const uniformBuffer = device.createBuffer({
-    label: "uniform coordinates buffer",
-    size: uniformBufferSize * settings.planets,
-    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-  });
-
-  // Fill in all uniform MVP matrices beforehand so you don't have to
-  // `device.queue.writeBuffer` for each one of the planets.
-  const allMatrices = new Float32Array(
-    (uniformBufferSize * settings.planets) / Float32Array.BYTES_PER_ELEMENT,
-  );
-  let previousTranslation: vec3 = [0, 0, 0];
-  for (let i = 0; i < settings.planets; i++) {
-    const modelTranslation: vec3 = vec3.add(
-      emptyVector,
-      previousTranslation,
-      translationVec,
-    );
-    previousTranslation = modelTranslation;
-    const mvpMatrix = getModelViewProjectionMatrix({
-      cameraRotationX: rotationAngleX,
-      cameraRotationY: rotationAngleY,
-      cameraRotationZ: movement * i + 0.0001,
-      modelTranslation,
-      cameraEye,
-      cameraLookupCenter,
-      cameraUp,
-      perspectiveAspectRatio,
-    });
-    allMatrices.set(
-      mvpMatrix,
-      i * (uniformBufferSize / Float32Array.BYTES_PER_ELEMENT),
-    );
-  }
-
-  // Update MVP Matrices
-  device.queue.writeBuffer(uniformBuffer, 0, allMatrices);
-
-  for (let i = 0; i < settings.planets; i++) {
-    const dynamicOffset = i * uniformBufferSize;
-
-    const texture = textures.getTextureBasedOnIndex(i);
-    console.assert(texture !== null, `Failed to load texture ${i}`);
-
-    // Bind Group
-    const bindGroup = device.createBindGroup({
-      label: "bind group element",
-      layout: pipeline.getBindGroupLayout(0),
-      entries: [
-        {
-          binding: 0,
-          resource: {
-            buffer: uniformBuffer,
-            size: uniformBufferSize,
-          },
-        },
-        { binding: 1, resource: sampler },
-        { binding: 2, resource: texture.createView() },
-      ],
-    });
-
-    renderPass.setBindGroup(0, bindGroup, [dynamicOffset]);
-    renderPass.drawIndexed(indices.length);
-  }
-
-  // Finalise render pass
-  renderPass.end();
-
-  // Submit Commands
-  device.queue.submit([commandEncoder.finish()]);
 
   // Request Next Frame
   requestAnimationFrame(frame);
