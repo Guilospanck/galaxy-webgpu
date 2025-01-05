@@ -171,7 +171,6 @@ const passDescriptor: GPURenderPassDescriptor = {
   },
 };
 
-let viewProjectionMatrix: Float32Array = new Float32Array(MAT4X4_BYTE_LENGTH);
 let viewProjectionMatrixUniformBuffer: GPUBuffer;
 const calculateAndSetViewProjectionMatrix = ({
   rotationAngleX,
@@ -189,7 +188,7 @@ const calculateAndSetViewProjectionMatrix = ({
   });
   const cameraEye: vec3 = [0, 0, scale];
   const cameraLookupCenter: vec3 = [-offsetX, offsetY, 0];
-  viewProjectionMatrix = getViewProjectionMatrix({
+  const viewProjectionMatrix = getViewProjectionMatrix({
     cameraRotationX: -rotationAngleY,
     cameraRotationZ: rotationAngleX,
     cameraEye,
@@ -357,113 +356,67 @@ const createPlanets = (numberOfPlanets: number) => {
 };
 createPlanets(settings.planets);
 
-const BOX = 0.3;
 const PLANET_INITIAL_CENTER: vec4 = [0, 0, 0, 1];
-// TODO: not working properly
+
 const checkCollision = () => {
   console.log("Checking collisions...");
-  const planetCenterPointAndRadius = [];
 
-  // Get all current center (transformed) points of each planet and its radius
+  const planetsCenterPoint: vec4[] = [];
+  // Get all current center point (in world space, after model matrix is applied) of each planet, along with its radius
   for (let i = 0; i < settings.planets; i++) {
     const dynamicOffset = i * modelMatrixUniformBufferSize;
-
-    const { radius } = planetsBuffers[i];
 
     let modelMatrix = allModelMatrices.subarray(
       dynamicOffset / 4,
       dynamicOffset / 4 + MAT4X4_BYTE_LENGTH,
     );
 
-    const mvpMatrix = mat4.multiply(
-      mat4.create(),
-      viewProjectionMatrix,
+    let planetCenterPositionOnScreen: vec4 = vec4.transformMat4(
+      vec4.create(),
+      PLANET_INITIAL_CENTER,
       modelMatrix,
     );
 
-    const planetCenterPositionOnScreen: vec4 = vec4.transformMat4(
-      vec4.create(),
-      PLANET_INITIAL_CENTER,
-      mvpMatrix,
-    );
-
-    planetCenterPointAndRadius.push({
-      radius,
-      center: planetCenterPositionOnScreen,
-    });
+    planetsCenterPoint.push(planetCenterPositionOnScreen);
   }
 
-  // actual check
+  // Uses the formula:
+  //
+  // Collides if: Distance(C1, C2) <= r1 + r2
+  //
+  // where:
+  //
+  // - Distance(C1, C2): Math.sqrt(Math.pow((x2-x1), 2) + Math.pow((y2-y1), 2) + Math.pow((z2-z1), 2))
+  //    - x, y and z are coordinates of the center of the spheres
+  // - r1: radius of the first sphere
+  // - r2: radius of the second sphere
+  //
   const alreadyCompared: number[] = [];
-  console.log({ alreadyCompared });
   for (let i = 0; i < settings.planets; i++) {
-    const { radius: radiusA, center: centerA } = planetCenterPointAndRadius[i];
-
-    const minA = vec3.add(
-      vec3.create(),
-      vec3.fromValues(centerA[0], centerA[1], centerA[2]),
-      [-radiusA, -radiusA, -radiusA],
-    );
-    const maxA = vec3.add(
-      vec3.create(),
-      vec3.fromValues(centerA[0], centerA[1], centerA[2]),
-      [radiusA, radiusA, radiusA],
-    );
-
-    const [minAX, minAY, minAZ] = minA;
-    const [maxAX, maxAY, maxAZ] = maxA;
-
     for (let j = 0; j < settings.planets; j++) {
-      if (i === j) {
+      if (i === j || alreadyCompared.includes(j)) {
         continue;
       }
 
-      const { radius: radiusB, center: centerB } =
-        planetCenterPointAndRadius[j];
+      const { radius: radiusA } = planetsBuffers[i];
+      const [x1, y1, z1] = planetsCenterPoint[i];
 
-      const minB = vec3.add(
-        vec3.create(),
-        vec3.fromValues(centerB[0], centerB[1], centerB[2]),
-        [-radiusB, -radiusB, -radiusB],
-      );
-      const maxB = vec3.add(
-        vec3.create(),
-        vec3.fromValues(centerB[0], centerB[1], centerB[2]),
-        [radiusB, radiusB, radiusB],
-      );
+      const { radius: radiusB } = planetsBuffers[j];
+      const [x2, y2, z2] = planetsCenterPoint[j];
 
-      const [minBX, minBY, minBZ] = minB;
-      const [maxBX, maxBY, maxBZ] = maxB;
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const dz = z2 - z1;
+      const distanceCAandCBSquared = dx * dx + dy * dy + dz * dz;
 
-      const isXCollided =
-        (minAX > minBX - BOX && minAX < maxBX + BOX) ||
-        (maxAX > minBX - BOX && maxAX < maxBX + BOX) ||
-        (minBX > minAX - BOX && minBX < maxAX + BOX) ||
-        (maxBX > minAX - BOX && maxBX < maxAX + BOX);
-      const isYCollided =
-        (minAY > minBY - BOX && minAY < maxBY + BOX) ||
-        (maxAY > minBY - BOX && maxAY < maxBY + BOX) ||
-        (minBY > minAY - BOX && minBY < maxAY + BOX) ||
-        (maxBY > minAY - BOX && maxBY < maxAY + BOX);
-      const isZCollided =
-        (minAZ > minBZ - BOX && minAZ < maxBZ + BOX) ||
-        (maxAZ > minBZ - BOX && maxAZ < maxBZ + BOX) ||
-        (minBZ > minAZ - BOX && minBZ < maxAZ + BOX) ||
-        (maxBZ > minAZ - BOX && maxBZ < maxAZ + BOX);
+      const sumOfRadius = radiusA + radiusB;
 
-      if (isXCollided && isYCollided && isZCollided) {
-        console.log(
-          `Point A c(${centerA}), r(${radiusA}) collided with Point B c(${centerB}), r(${radiusB})`,
-        );
-        console.log(`
-          minA=${minA},
-          maxA=${maxA},
-          minB=${minB},
-          maxB=${maxB}
-        `);
+      const collided = distanceCAandCBSquared <= sumOfRadius * sumOfRadius;
+
+      if (collided) {
+        console.log(`Collided ${i} with ${j}`);
       }
     }
-
     alreadyCompared.push(i);
   }
 };
