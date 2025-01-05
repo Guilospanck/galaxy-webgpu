@@ -391,13 +391,8 @@ const checkCollision = () => {
   // - r1: radius of the first sphere
   // - r2: radius of the second sphere
   //
-  const alreadyCompared: number[] = [];
   for (let i = 0; i < settings.planets; i++) {
-    for (let j = 0; j < settings.planets; j++) {
-      if (i === j || alreadyCompared.includes(j)) {
-        continue;
-      }
-
+    for (let j = i + 1; j < settings.planets; j++) {
       const { radius: radiusA } = planetsBuffers[i];
       const [x1, y1, z1] = planetsCenterPoint[i];
 
@@ -417,7 +412,6 @@ const checkCollision = () => {
         console.log(`Collided ${i} with ${j}`);
       }
     }
-    alreadyCompared.push(i);
   }
 };
 
