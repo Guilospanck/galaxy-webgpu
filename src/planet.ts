@@ -113,6 +113,27 @@ const bindGroupLayout = device.createBindGroupLayout({
   ],
 });
 
+// Bind Group for the compute shader
+const computeShaderBindGroupLayout = device.createBindGroupLayout({
+  label: "compute shader custom bind group layout",
+  entries: [
+    {
+      binding: 0, // Planets center point in world space + radius
+      visibility: GPUShaderStage.COMPUTE,
+      buffer: {
+        type: "storage",
+      },
+    },
+    {
+      binding: 1, // collisions
+      visibility: GPUShaderStage.COMPUTE,
+      buffer: {
+        type: "storage",
+      },
+    },
+  ],
+});
+
 // Pipeline
 const pipeline = device.createRenderPipeline({
   label: "render pipeline",
@@ -151,6 +172,44 @@ const pipeline = device.createRenderPipeline({
     depthWriteEnabled: true,
     depthCompare: "less",
   },
+});
+
+// Compute shader pipeline
+const computeShaderPipeline = device.createComputePipeline({
+  label: "compute shader render pipeline",
+  layout: device.createPipelineLayout({
+    bindGroupLayouts: [computeShaderBindGroupLayout],
+  }),
+  compute: {
+    module: shaderModule,
+  },
+});
+
+// used in the compute shader pipeline
+const planetsCenterPointAndRadiusBuffer = device.createBuffer({
+  size: settings.planets * Float32Array.BYTES_PER_ELEMENT * 4,
+  usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+});
+
+// used in the compute shader pipeline
+const collisionsBuffer = device.createBuffer({
+  size: settings.planets * 4 * 2 + 4, // (a: u32, b: u32) * planets + count: 32
+  usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+});
+
+// results
+const resultsBuffer = device.createBuffer({
+  size: collisionsBuffer.size,
+  usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+});
+
+const computeShaderBindGroup = device.createBindGroup({
+  label: "compute shader bindGroup",
+  layout: computeShaderPipeline.getBindGroupLayout(0),
+  entries: [
+    { binding: 0, resource: { buffer: planetsCenterPointAndRadiusBuffer } },
+    { binding: 1, resource: { buffer: collisionsBuffer } },
+  ],
 });
 
 const passDescriptor: GPURenderPassDescriptor = {
@@ -380,6 +439,12 @@ const checkCollision = () => {
     planetsCenterPoint.push(planetCenterPositionOnScreen);
   }
 
+  device.queue.writeBuffer(
+    planetsCenterPointAndRadiusBuffer,
+    0,
+    new Float32Array(planetsCenterPoint.flat() as number[]),
+  );
+
   // Uses the formula:
   //
   // Collides if: Distance(C1, C2) <= r1 + r2
@@ -391,31 +456,31 @@ const checkCollision = () => {
   // - r1: radius of the first sphere
   // - r2: radius of the second sphere
   //
-  for (let i = 0; i < settings.planets; i++) {
-    for (let j = i + 1; j < settings.planets; j++) {
-      const { radius: radiusA } = planetsBuffers[i];
-      const [x1, y1, z1] = planetsCenterPoint[i];
-
-      const { radius: radiusB } = planetsBuffers[j];
-      const [x2, y2, z2] = planetsCenterPoint[j];
-
-      const dx = x2 - x1;
-      const dy = y2 - y1;
-      const dz = z2 - z1;
-      const distanceCAandCBSquared = dx * dx + dy * dy + dz * dz;
-
-      const sumOfRadius = radiusA + radiusB;
-
-      const collided = distanceCAandCBSquared <= sumOfRadius * sumOfRadius;
-
-      if (collided) {
-        console.log(`Collided ${i} with ${j}`);
-      }
-    }
-  }
+  // for (let i = 0; i < settings.planets; i++) {
+  //   for (let j = i + 1; j < settings.planets; j++) {
+  //     const { radius: radiusA } = planetsBuffers[i];
+  //     const [x1, y1, z1] = planetsCenterPoint[i];
+  //
+  //     const { radius: radiusB } = planetsBuffers[j];
+  //     const [x2, y2, z2] = planetsCenterPoint[j];
+  //
+  //     const dx = x2 - x1;
+  //     const dy = y2 - y1;
+  //     const dz = z2 - z1;
+  //     const distanceCAandCBSquared = dx * dx + dy * dy + dz * dz;
+  //
+  //     const sumOfRadius = radiusA + radiusB;
+  //
+  //     const collided = distanceCAandCBSquared <= sumOfRadius * sumOfRadius;
+  //
+  //     if (collided) {
+  //       console.log(`Collided ${i} with ${j}`);
+  //     }
+  //   }
+  // }
 };
 
-const renderPlanets = () => {
+const renderPlanets = async () => {
   // Create Command Encoder
   const commandEncoder = device.createCommandEncoder({
     label: "command encoder",
@@ -464,8 +529,30 @@ const renderPlanets = () => {
   // Finalise render pass
   renderPass.end();
 
+  // compute shader
+  checkCollision();
+  const computePass = commandEncoder.beginComputePass();
+  computePass.setPipeline(computeShaderPipeline);
+  computePass.setBindGroup(0, computeShaderBindGroup);
+  computePass.dispatchWorkgroups(settings.planets);
+  computePass.end();
+
+  commandEncoder.copyBufferToBuffer(
+    collisionsBuffer,
+    0,
+    resultsBuffer,
+    0,
+    resultsBuffer.size,
+  );
+
   // Submit Commands
   device.queue.submit([commandEncoder.finish()]);
+
+  // SHOW ME THEMONEEEEY (results)
+  await resultsBuffer.mapAsync(GPUMapMode.READ);
+  const collisions = new Float32Array(resultsBuffer.getMappedRange());
+  console.log(collisions);
+  resultsBuffer.unmap();
 };
 
 /// Variables to check for conditional rendering
@@ -476,7 +563,6 @@ let currentCameraConfigurations: PointerEventsTransformations = {
   ...pointerEvents,
 };
 
-let t = 0;
 function frame() {
   stats.begin();
 
@@ -498,10 +584,6 @@ function frame() {
   }
 
   renderPlanets();
-  if (t % 1063 === 1062) {
-    checkCollision();
-  }
-  t++;
 
   stats.end();
 
