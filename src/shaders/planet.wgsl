@@ -32,6 +32,7 @@ fn main_fragment(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
   return textureSample(sphereTexture, textureSampler, uv);
 }
 
+// Compute step 
 struct CollisionPairs {
   a: u32,
   b: u32,

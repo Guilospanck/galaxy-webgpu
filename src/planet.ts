@@ -185,33 +185,6 @@ const computeShaderPipeline = device.createComputePipeline({
   },
 });
 
-// used in the compute shader pipeline
-const planetsCenterPointAndRadiusBuffer = device.createBuffer({
-  size: settings.planets * Float32Array.BYTES_PER_ELEMENT * 4,
-  usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-});
-
-// used in the compute shader pipeline
-const collisionsBuffer = device.createBuffer({
-  size: settings.planets * 4 * 2 + 4, // (a: u32, b: u32) * planets + count: 32
-  usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-});
-
-// results
-const resultsBuffer = device.createBuffer({
-  size: collisionsBuffer.size,
-  usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-});
-
-const computeShaderBindGroup = device.createBindGroup({
-  label: "compute shader bindGroup",
-  layout: computeShaderPipeline.getBindGroupLayout(0),
-  entries: [
-    { binding: 0, resource: { buffer: planetsCenterPointAndRadiusBuffer } },
-    { binding: 1, resource: { buffer: collisionsBuffer } },
-  ],
-});
-
 const passDescriptor: GPURenderPassDescriptor = {
   label: "pass descriptor element",
   colorAttachments: [
@@ -415,71 +388,6 @@ const createPlanets = (numberOfPlanets: number) => {
 };
 createPlanets(settings.planets);
 
-const PLANET_INITIAL_CENTER: vec4 = [0, 0, 0, 1];
-
-const checkCollision = () => {
-  console.log("Checking collisions...");
-
-  const planetsCenterPoint: vec4[] = [];
-  // Get all current center point (in world space, after model matrix is applied) of each planet, along with its radius
-  for (let i = 0; i < settings.planets; i++) {
-    const dynamicOffset = i * modelMatrixUniformBufferSize;
-
-    let modelMatrix = allModelMatrices.subarray(
-      dynamicOffset / 4,
-      dynamicOffset / 4 + MAT4X4_BYTE_LENGTH,
-    );
-
-    let planetCenterPositionOnScreen: vec4 = vec4.transformMat4(
-      vec4.create(),
-      PLANET_INITIAL_CENTER,
-      modelMatrix,
-    );
-
-    planetsCenterPoint.push(planetCenterPositionOnScreen);
-  }
-
-  device.queue.writeBuffer(
-    planetsCenterPointAndRadiusBuffer,
-    0,
-    new Float32Array(planetsCenterPoint.flat() as number[]),
-  );
-
-  // Uses the formula:
-  //
-  // Collides if: Distance(C1, C2) <= r1 + r2
-  //
-  // where:
-  //
-  // - Distance(C1, C2): Math.sqrt(Math.pow((x2-x1), 2) + Math.pow((y2-y1), 2) + Math.pow((z2-z1), 2))
-  //    - x, y and z are coordinates of the center of the spheres
-  // - r1: radius of the first sphere
-  // - r2: radius of the second sphere
-  //
-  // for (let i = 0; i < settings.planets; i++) {
-  //   for (let j = i + 1; j < settings.planets; j++) {
-  //     const { radius: radiusA } = planetsBuffers[i];
-  //     const [x1, y1, z1] = planetsCenterPoint[i];
-  //
-  //     const { radius: radiusB } = planetsBuffers[j];
-  //     const [x2, y2, z2] = planetsCenterPoint[j];
-  //
-  //     const dx = x2 - x1;
-  //     const dy = y2 - y1;
-  //     const dz = z2 - z1;
-  //     const distanceCAandCBSquared = dx * dx + dy * dy + dz * dz;
-  //
-  //     const sumOfRadius = radiusA + radiusB;
-  //
-  //     const collided = distanceCAandCBSquared <= sumOfRadius * sumOfRadius;
-  //
-  //     if (collided) {
-  //       console.log(`Collided ${i} with ${j}`);
-  //     }
-  //   }
-  // }
-};
-
 const renderPlanets = async () => {
   // Create Command Encoder
   const commandEncoder = device.createCommandEncoder({
@@ -529,12 +437,103 @@ const renderPlanets = async () => {
   // Finalise render pass
   renderPass.end();
 
-  // compute shader
-  checkCollision();
+  // Submit Commands
+  device.queue.submit([commandEncoder.finish()]);
+};
+
+const PLANET_INITIAL_CENTER: vec4 = [0, 0, 0, 1];
+let planetsCenterPoint: vec4[] = [];
+const getPlanetsCenterPoint = () => {
+  // empty the current array
+  planetsCenterPoint = [];
+
+  // Get all current center point (in world space, after model matrix is applied) of each planet, along with its radius
+  for (let i = 0; i < settings.planets; i++) {
+    const dynamicOffset = i * modelMatrixUniformBufferSize;
+
+    let modelMatrix = allModelMatrices.subarray(
+      dynamicOffset / 4,
+      dynamicOffset / 4 + MAT4X4_BYTE_LENGTH,
+    );
+
+    let planetCenterPositionOnScreen: vec4 = vec4.transformMat4(
+      vec4.create(),
+      PLANET_INITIAL_CENTER,
+      modelMatrix,
+    );
+
+    planetsCenterPoint.push(planetCenterPositionOnScreen);
+  }
+};
+
+let planetsCenterPointAndRadiusBuffer: GPUBuffer;
+let collisionsBuffer: GPUBuffer;
+let resultsBuffer: GPUBuffer;
+let computeShaderBindGroup: GPUBindGroup;
+
+const recreateComputeShaderBuffers = (numberOfPlanets: number) => {
+  planetsCenterPointAndRadiusBuffer = device.createBuffer({
+    size: numberOfPlanets * Float32Array.BYTES_PER_ELEMENT * 4,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+  });
+
+  collisionsBuffer = device.createBuffer({
+    size: numberOfPlanets * 4 * 2 + 4, // (a: u32, b: u32) * planets + count: 32
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+  });
+
+  resultsBuffer = device.createBuffer({
+    size: collisionsBuffer.size,
+    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+  });
+
+  computeShaderBindGroup = device.createBindGroup({
+    label: "compute shader bindGroup",
+    layout: computeShaderPipeline.getBindGroupLayout(0),
+    entries: [
+      { binding: 0, resource: { buffer: planetsCenterPointAndRadiusBuffer } },
+      { binding: 1, resource: { buffer: collisionsBuffer } },
+    ],
+  });
+
+  device.queue.writeBuffer(
+    planetsCenterPointAndRadiusBuffer,
+    0,
+    new Float32Array(planetsCenterPoint.flat() as number[]),
+  );
+};
+recreateComputeShaderBuffers(settings.planets);
+
+interface CollisionPairs {
+  a: number;
+  b: number;
+}
+
+const checkCollisionViaComputeShader = async ({
+  numberOfPlanets,
+  recreateBuffers = false,
+}: {
+  numberOfPlanets: number;
+  recreateBuffers: boolean;
+}) => {
+  console.log("Checking collisions...");
+  console.log({ recreateBuffers });
+
+  getPlanetsCenterPoint();
+
+  if (recreateBuffers) {
+    recreateComputeShaderBuffers(numberOfPlanets);
+  }
+
+  // Create Command Encoder
+  const commandEncoder = device.createCommandEncoder({
+    label: "command encoder",
+  });
+
   const computePass = commandEncoder.beginComputePass();
   computePass.setPipeline(computeShaderPipeline);
   computePass.setBindGroup(0, computeShaderBindGroup);
-  computePass.dispatchWorkgroups(settings.planets);
+  computePass.dispatchWorkgroups(numberOfPlanets, numberOfPlanets);
   computePass.end();
 
   commandEncoder.copyBufferToBuffer(
@@ -548,21 +547,44 @@ const renderPlanets = async () => {
   // Submit Commands
   device.queue.submit([commandEncoder.finish()]);
 
-  // SHOW ME THEMONEEEEY (results)
   await resultsBuffer.mapAsync(GPUMapMode.READ);
-  const collisions = new Float32Array(resultsBuffer.getMappedRange());
-  console.log(collisions);
+  const arrayBuffer = resultsBuffer.getMappedRange();
+
+  // Create a DataView or TypedArray to interpret the buffer
+  const view = new DataView(arrayBuffer);
+  const structSize = 2 * 4;
+
+  // Parse the buffer into MyStruct instances
+  const collisions: CollisionPairs[] = [];
+  for (let i = 0; i < Math.floor(collisionsBuffer.size / structSize); i++) {
+    let offset = 0;
+    if (i === 0) {
+      offset = 4; // getting rid of `count`
+    }
+    const baseOffset = i * structSize;
+    const a = view.getUint32(baseOffset + offset + 4, true); // a
+    const b = view.getUint32(baseOffset + offset + 8, true); // b
+
+    collisions.push({ a, b });
+  }
+
+  // console.log(collisions.length);
+  // console.log(collisions);
+
   resultsBuffer.unmap();
 };
 
 /// Variables to check for conditional rendering
 // INFO: this variable is NOT updated automatically when settings.planets change.
 let currentPlanets = settings.planets;
+// INFO: this is different because the compute shader does not run on every frame
+let currentPlanetsForComputeShader = settings.planets;
 // INFO: this also is NOT when rotation angles change
 let currentCameraConfigurations: PointerEventsTransformations = {
   ...pointerEvents,
 };
 
+let t = 0;
 function frame() {
   stats.begin();
 
@@ -578,12 +600,21 @@ function frame() {
   }
 
   // Only create new planets if we change the settings.planets UI variable
-  if (currentPlanets !== settings.planets) {
+  const numberOfPlanetsChanged = currentPlanets !== settings.planets;
+  if (numberOfPlanetsChanged) {
     createPlanets(settings.planets);
     currentPlanets = settings.planets;
   }
 
   renderPlanets();
+  if (t % 1233 === 0) {
+    checkCollisionViaComputeShader({
+      numberOfPlanets: settings.planets,
+      recreateBuffers: currentPlanetsForComputeShader !== settings.planets,
+    });
+    currentPlanetsForComputeShader = settings.planets;
+  }
+  t++;
 
   stats.end();
 
