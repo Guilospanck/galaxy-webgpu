@@ -50,7 +50,7 @@ struct CenterAndRadius {
   r: f32,
 }
 
-@group(0) @binding(0) var<storage, read_write> planetsCenterPointInWorldSpaceAndRadius: array<CenterAndRadius>;
+@group(0) @binding(0) var<storage, read> planetsCenterPointInWorldSpaceAndRadius: array<CenterAndRadius>;
 @group(0) @binding(1) var<storage, read_write> collisions: Collision;
 
 fn check_collision(a: CenterAndRadius, b: CenterAndRadius) -> bool {
@@ -77,8 +77,12 @@ fn check_collision(a: CenterAndRadius, b: CenterAndRadius) -> bool {
   return collided;
 }
 
-@compute @workgroup_size(1)
+@compute @workgroup_size(64)
 fn compute_collision(@builtin(global_invocation_id) globalID: vec3u) {
+  if (globalID.x >= arrayLength(&planetsCenterPointInWorldSpaceAndRadius)) {
+    return;
+  }
+
   let currentPlanetCenterPoint = planetsCenterPointInWorldSpaceAndRadius[globalID.x];
 
   for (var i =  0u; i < arrayLength(&planetsCenterPointInWorldSpaceAndRadius); i++) {

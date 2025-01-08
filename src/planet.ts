@@ -121,7 +121,7 @@ const computeShaderBindGroupLayout = device.createBindGroupLayout({
       binding: 0, // Planets center point in world space + radius
       visibility: GPUShaderStage.COMPUTE,
       buffer: {
-        type: "storage",
+        type: "read-only-storage",
       },
     },
     {
@@ -182,6 +182,7 @@ const computeShaderPipeline = device.createComputePipeline({
   }),
   compute: {
     module: shaderModule,
+    entryPoint: "compute_collision",
   },
 });
 
@@ -553,7 +554,9 @@ const checkCollisionViaComputeShader = async ({
   const computePass = commandEncoder.beginComputePass();
   computePass.setPipeline(computeShaderPipeline);
   computePass.setBindGroup(0, computeShaderBindGroup);
-  computePass.dispatchWorkgroups(numberOfPlanets, numberOfPlanets);
+
+  // dispatch workgroups
+  computePass.dispatchWorkgroups(Math.ceil(numberOfPlanets / 64));
   computePass.end();
 
   commandEncoder.copyBufferToBuffer(
