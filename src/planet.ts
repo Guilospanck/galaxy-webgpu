@@ -442,14 +442,14 @@ const renderPlanets = async () => {
 };
 
 const PLANET_INITIAL_CENTER: vec4 = [0, 0, 0, 1];
-let planetsCenterPoint: vec4[] = [];
-const getPlanetsCenterPoint = () => {
-  // empty the current array
-  planetsCenterPoint = [];
+const getPlanetsCenterPoint = (): vec4[] => {
+  const planetsCenterPoint: vec4[] = [];
 
   // Get all current center point (in world space, after model matrix is applied) of each planet, along with its radius
   for (let i = 0; i < settings.planets; i++) {
     const dynamicOffset = i * modelMatrixUniformBufferSize;
+
+    const { radius } = planetsBuffers[i];
 
     let modelMatrix = allModelMatrices.subarray(
       dynamicOffset / 4,
@@ -462,8 +462,17 @@ const getPlanetsCenterPoint = () => {
       modelMatrix,
     );
 
-    planetsCenterPoint.push(planetCenterPositionOnScreen);
+    planetsCenterPoint.push(
+      vec4.fromValues(
+        planetCenterPositionOnScreen[0],
+        planetCenterPositionOnScreen[1],
+        planetCenterPositionOnScreen[2],
+        radius,
+      ),
+    );
   }
+
+  return planetsCenterPoint;
 };
 
 let planetsCenterPointAndRadiusBuffer: GPUBuffer;
@@ -472,8 +481,10 @@ let resultsBuffer: GPUBuffer;
 let computeShaderBindGroup: GPUBindGroup;
 
 const recreateComputeShaderBuffers = (numberOfPlanets: number) => {
+  const planetsCenterPoint = getPlanetsCenterPoint();
+
   planetsCenterPointAndRadiusBuffer = device.createBuffer({
-    size: numberOfPlanets * Float32Array.BYTES_PER_ELEMENT * 4,
+    size: numberOfPlanets * Float32Array.BYTES_PER_ELEMENT * 4, // x, y, z, r
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
   });
 
@@ -499,15 +510,27 @@ const recreateComputeShaderBuffers = (numberOfPlanets: number) => {
   device.queue.writeBuffer(
     planetsCenterPointAndRadiusBuffer,
     0,
-    new Float32Array(planetsCenterPoint.flat() as number[]),
+    new Float32Array(planetsCenterPoint.map((a) => [...a]).flat() as number[]),
   );
 };
-recreateComputeShaderBuffers(settings.planets);
 
-interface CollisionPairs {
+interface CollisionPair {
   a: number;
   b: number;
 }
+
+const removeDuplicates = (array: CollisionPair[]) => {
+  const seen = new Set();
+
+  return array.filter((item: CollisionPair) => {
+    if (seen.has(`${item.a},${item.b}`) || seen.has(`${item.b},${item.a}`)) {
+      return false; // Duplicate found, exclude it
+    }
+
+    seen.add(`${item.a},${item.b}`);
+    return true;
+  });
+};
 
 const checkCollisionViaComputeShader = async ({
   numberOfPlanets,
@@ -517,9 +540,6 @@ const checkCollisionViaComputeShader = async ({
   recreateBuffers: boolean;
 }) => {
   console.log("Checking collisions...");
-  console.log({ recreateBuffers });
-
-  getPlanetsCenterPoint();
 
   if (recreateBuffers) {
     recreateComputeShaderBuffers(numberOfPlanets);
@@ -527,7 +547,7 @@ const checkCollisionViaComputeShader = async ({
 
   // Create Command Encoder
   const commandEncoder = device.createCommandEncoder({
-    label: "command encoder",
+    label: "compute pass command encoder",
   });
 
   const computePass = commandEncoder.beginComputePass();
@@ -552,10 +572,10 @@ const checkCollisionViaComputeShader = async ({
 
   // Create a DataView or TypedArray to interpret the buffer
   const view = new DataView(arrayBuffer);
-  const structSize = 2 * 4;
+  const structSize = 2 * 4; // CollisionPair (a: number, b: number)
 
-  // Parse the buffer into MyStruct instances
-  const collisions: CollisionPairs[] = [];
+  // Parse the buffer into a structure
+  const collisions: CollisionPair[] = [];
   for (let i = 0; i < Math.floor(collisionsBuffer.size / structSize); i++) {
     let offset = 0;
     if (i === 0) {
@@ -568,8 +588,8 @@ const checkCollisionViaComputeShader = async ({
     collisions.push({ a, b });
   }
 
-  // console.log(collisions.length);
-  // console.log(collisions);
+  const filteredCollisions = removeDuplicates(collisions);
+  console.log(filteredCollisions);
 
   resultsBuffer.unmap();
 };
@@ -607,6 +627,14 @@ function frame() {
   }
 
   renderPlanets();
+
+  // Create the compute shader buffers as soon as we start the
+  // application and after we rendered planets
+  if (t === 0) {
+    recreateComputeShaderBuffers(settings.planets);
+  }
+
+  // Only check for collisions every so often
   if (t % 1233 === 0) {
     checkCollisionViaComputeShader({
       numberOfPlanets: settings.planets,
