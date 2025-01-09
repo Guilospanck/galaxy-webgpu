@@ -35,11 +35,20 @@ Make use of cos, sen and radius to make the planets go around in a orbit-like. A
 
 Check https://github.com/mrdoob/stats.js
 
+## (Done) Add collision
+
 ## Add resize observer to the canvas
 
 ## Type `planetsBuffers`
 
 ## Add parametrization to planet movements
 
-## Add collision
+## Check ellipse movement
+
+Not sure it is working.
+
+## Check camera movement
+
+Not sure it is working properly.
+
 

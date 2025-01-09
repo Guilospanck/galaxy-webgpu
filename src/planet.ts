@@ -1,4 +1,4 @@
-import { MAT4X4_BYTE_LENGTH } from "./constants";
+import { MAT4X4_BYTE_LENGTH, WORKGROUP_SIZE } from "./constants";
 import { GUI } from "dat.gui";
 import {
   calculateXYZEllipseCoordinates,
@@ -64,6 +64,8 @@ setupPointerEvents({
 const shaderModule = device.createShaderModule({ code: planetWGSL });
 console.assert(shaderModule !== null, "Failed to compile shader code");
 
+//// VERTEX AND FRAGMENT SHADER STUFF ///////
+//
 // INFO: we are using an async constructor
 const textures = await new PlanetTextures(device);
 
@@ -113,27 +115,6 @@ const bindGroupLayout = device.createBindGroupLayout({
   ],
 });
 
-// Bind Group for the compute shader
-const computeShaderBindGroupLayout = device.createBindGroupLayout({
-  label: "compute shader custom bind group layout",
-  entries: [
-    {
-      binding: 0, // Planets center point in world space + radius
-      visibility: GPUShaderStage.COMPUTE,
-      buffer: {
-        type: "read-only-storage",
-      },
-    },
-    {
-      binding: 1, // collisions
-      visibility: GPUShaderStage.COMPUTE,
-      buffer: {
-        type: "storage",
-      },
-    },
-  ],
-});
-
 // Pipeline
 const pipeline = device.createRenderPipeline({
   label: "render pipeline",
@@ -171,18 +152,6 @@ const pipeline = device.createRenderPipeline({
     format: "depth24plus",
     depthWriteEnabled: true,
     depthCompare: "less",
-  },
-});
-
-// Compute shader pipeline
-const computeShaderPipeline = device.createComputePipeline({
-  label: "compute shader render pipeline",
-  layout: device.createPipelineLayout({
-    bindGroupLayouts: [computeShaderBindGroupLayout],
-  }),
-  compute: {
-    module: shaderModule,
-    entryPoint: "compute_collision",
   },
 });
 
@@ -314,8 +283,7 @@ const setModelMatrixUniformBuffer = (): GPUBuffer => {
   for (let i = 0; i < settings.planets; i++) {
     const { x, y, z } = calculateXYZEllipseCoordinates(i % 360);
 
-    previousTranslation = vec3.add(emptyVector, previousTranslation, [i, i, i]);
-    // previousTranslation = vec3.add(emptyVector, previousTranslation, [x, y, z]);
+    previousTranslation = vec3.add(emptyVector, previousTranslation, [x, y, z]);
 
     const translation = new Date().getTime() * 0.0001 + i;
 
@@ -443,8 +411,8 @@ const renderPlanets = async () => {
 };
 
 const PLANET_INITIAL_CENTER: vec4 = [0, 0, 0, 1];
-const getPlanetsCenterPoint = (): vec4[] => {
-  const planetsCenterPoint: vec4[] = [];
+const getPlanetsCenterPointAndRadius = (): vec4[] => {
+  const planetsCenterPointAndRadius: vec4[] = [];
 
   // Get all current center point (in world space, after model matrix is applied) of each planet, along with its radius
   for (let i = 0; i < settings.planets; i++) {
@@ -463,7 +431,7 @@ const getPlanetsCenterPoint = (): vec4[] => {
       modelMatrix,
     );
 
-    planetsCenterPoint.push(
+    planetsCenterPointAndRadius.push(
       vec4.fromValues(
         planetCenterPositionOnScreen[0],
         planetCenterPositionOnScreen[1],
@@ -473,8 +441,43 @@ const getPlanetsCenterPoint = (): vec4[] => {
     );
   }
 
-  return planetsCenterPoint;
+  return planetsCenterPointAndRadius;
 };
+
+//// COMPUTE SHADER STUFF //////
+//
+// Bind Group for the compute shader
+const computeShaderBindGroupLayout = device.createBindGroupLayout({
+  label: "compute shader custom bind group layout",
+  entries: [
+    {
+      binding: 0, // Planets center point in world space + radius
+      visibility: GPUShaderStage.COMPUTE,
+      buffer: {
+        type: "read-only-storage",
+      },
+    },
+    {
+      binding: 1, // collisions
+      visibility: GPUShaderStage.COMPUTE,
+      buffer: {
+        type: "storage",
+      },
+    },
+  ],
+});
+
+// Compute shader pipeline
+const computeShaderPipeline = device.createComputePipeline({
+  label: "compute shader render pipeline",
+  layout: device.createPipelineLayout({
+    bindGroupLayouts: [computeShaderBindGroupLayout],
+  }),
+  compute: {
+    module: shaderModule,
+    entryPoint: "compute_collision",
+  },
+});
 
 let planetsCenterPointAndRadiusBuffer: GPUBuffer;
 let collisionsBuffer: GPUBuffer;
@@ -482,19 +485,50 @@ let resultsBuffer: GPUBuffer;
 let computeShaderBindGroup: GPUBindGroup;
 
 const recreateComputeShaderBuffers = (numberOfPlanets: number) => {
-  const planetsCenterPoint = getPlanetsCenterPoint();
+  const planetsCenterPoint = getPlanetsCenterPointAndRadius();
 
   planetsCenterPointAndRadiusBuffer = device.createBuffer({
+    label: "compute shader planets center points and radius buffer",
     size: numberOfPlanets * Float32Array.BYTES_PER_ELEMENT * 4, // x, y, z, r
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
   });
 
+  // INFO: This should be the "correct" way of calculating how many possible
+  // collisions there area, but this number grows a lot after some time, which
+  // makes it incalculable and not efficient for this application. It is also
+  // very unlikely that all the planets will collided with all of them (think of
+  // all planets being in a single place).
+  //
+  // One of the possible solutions is to maintain the size of `numberOfPlanets`
+  // and then destroy those collided planets, so in the next `checkCollision`
+  // iteration they will not exist, giving space for the other collided planets
+  // to be checked.
+  //
+  // The total amount of collision that can exist in the system is given by the
+  // formula (simple combination):
+  //                          C(n,k)=n!/k!(n-k)!
+  // where:
+  //              0 <= k <= n
+  //
+  //              n: number of elements (in our case number of planets)
+  //              k: unique k-selections (in our case 2, as we are checking
+  //                                the collision from one planet to another)
+  //
+  // const collisionBufferSize =
+  //   calculateFactorial(numberOfPlanets) /
+  //   (2 * calculateFactorial(numberOfPlanets - 2));
+
   collisionsBuffer = device.createBuffer({
+    label: "compute shader collision buffer",
     size: numberOfPlanets * 4 * 2 + 4, // (a: u32, b: u32) * planets + count: 32
-    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+    usage:
+      GPUBufferUsage.STORAGE |
+      GPUBufferUsage.COPY_SRC |
+      GPUBufferUsage.COPY_DST, // INFO: COPY_DST is used for the command encoder to clear the buffer after it is copied into resultsBuffer
   });
 
   resultsBuffer = device.createBuffer({
+    label: "compute shader result buffer",
     size: collisionsBuffer.size,
     usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
   });
@@ -520,17 +554,26 @@ interface CollisionPair {
   b: number;
 }
 
-const removeDuplicates = (array: CollisionPair[]) => {
-  const seen = new Set();
+const parseResultsBuffer = (arrayBuffer: ArrayBuffer, label: string) => {
+  const view = new DataView(arrayBuffer.slice(4)); // remove `count`
+  const structSize = 2 * 4; // CollisionPair (a: number, b: number)
 
-  return array.filter((item: CollisionPair) => {
-    if (seen.has(`${item.a},${item.b}`) || seen.has(`${item.b},${item.a}`)) {
-      return false; // Duplicate found, exclude it
+  const collisions: CollisionPair[] = [];
+  for (let i = 0; i < Math.floor(view.byteLength / structSize); i++) {
+    const baseOffset = i * structSize;
+    const a = view.getUint32(baseOffset, true); // a
+    const b = view.getUint32(baseOffset + 4, true); // b
+
+    // INFO: the Collision structure in the shader will have the size of
+    // the number of planets. Therefore, if we have less actual collisions than
+    // that number, it is using the default value (0).
+    // TODO: Check the copyBuffer part. That might do the trick.
+    if (a !== b) {
+      collisions.push({ a, b });
     }
+  }
 
-    seen.add(`${item.a},${item.b}`);
-    return true;
-  });
+  console.log(label, collisions);
 };
 
 const checkCollisionViaComputeShader = async ({
@@ -556,7 +599,7 @@ const checkCollisionViaComputeShader = async ({
   computePass.setBindGroup(0, computeShaderBindGroup);
 
   // dispatch workgroups
-  computePass.dispatchWorkgroups(Math.ceil(numberOfPlanets / 64));
+  computePass.dispatchWorkgroups(Math.ceil(numberOfPlanets / WORKGROUP_SIZE));
   computePass.end();
 
   commandEncoder.copyBufferToBuffer(
@@ -567,33 +610,19 @@ const checkCollisionViaComputeShader = async ({
     resultsBuffer.size,
   );
 
+  // clear collisions buffer
+  commandEncoder.clearBuffer(collisionsBuffer);
+
   // Submit Commands
   device.queue.submit([commandEncoder.finish()]);
 
   await resultsBuffer.mapAsync(GPUMapMode.READ);
   const arrayBuffer = resultsBuffer.getMappedRange();
 
-  // Create a DataView or TypedArray to interpret the buffer
-  const view = new DataView(arrayBuffer);
-  const structSize = 2 * 4; // CollisionPair (a: number, b: number)
-
   // Parse the buffer into a structure
-  const collisions: CollisionPair[] = [];
-  for (let i = 0; i < Math.floor(collisionsBuffer.size / structSize); i++) {
-    let offset = 0;
-    if (i === 0) {
-      offset = 4; // getting rid of `count`
-    }
-    const baseOffset = i * structSize;
-    const a = view.getUint32(baseOffset + offset + 4, true); // a
-    const b = view.getUint32(baseOffset + offset + 8, true); // b
+  parseResultsBuffer(arrayBuffer, "collisions");
 
-    collisions.push({ a, b });
-  }
-
-  const filteredCollisions = removeDuplicates(collisions);
-  console.log(filteredCollisions);
-
+  // release buffer
   resultsBuffer.unmap();
 };
 

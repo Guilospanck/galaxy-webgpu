@@ -424,3 +424,14 @@ export const hasCameraChangedPositions = (
 
   return false;
 };
+
+// INFO: @deprecated because we are not calculating the simple combination
+// in order to have the right size for the collisionsBuffer (number of possible
+// collisions based on the number of planets).
+// export const calculateFactorial = (input: number): number => {
+//   let result = input;
+//   for (let i = input - 1; i >= 1; i--) {
+//     result *= i;
+//   }
+//   return result;
+// };

@@ -33,14 +33,14 @@ fn main_fragment(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
 }
 
 // Compute step 
-struct CollisionPairs {
+struct CollisionPair {
   a: u32,
   b: u32,
 }
 
 struct Collision {
   count: atomic<u32>,
-  data: array<CollisionPairs>,
+  data: array<CollisionPair>,
 }
 
 struct CenterAndRadius {
@@ -79,19 +79,20 @@ fn check_collision(a: CenterAndRadius, b: CenterAndRadius) -> bool {
 
 @compute @workgroup_size(64)
 fn compute_collision(@builtin(global_invocation_id) globalID: vec3u) {
-  if (globalID.x >= arrayLength(&planetsCenterPointInWorldSpaceAndRadius)) {
+  let currentIdx = globalID.x;
+
+  if (currentIdx >= arrayLength(&planetsCenterPointInWorldSpaceAndRadius)) {
     return;
   }
 
-  let currentPlanetCenterPoint = planetsCenterPointInWorldSpaceAndRadius[globalID.x];
+  let currentPlanetCenterPoint = planetsCenterPointInWorldSpaceAndRadius[currentIdx];
 
-  for (var i =  0u; i < arrayLength(&planetsCenterPointInWorldSpaceAndRadius); i++) {
-    if (i == globalID.x) {continue;}
+  for (var i = currentIdx+1; i < arrayLength(&planetsCenterPointInWorldSpaceAndRadius); i++) {
     let checkingPlanetCenterPoint = planetsCenterPointInWorldSpaceAndRadius[i];
 
     if (check_collision(currentPlanetCenterPoint, checkingPlanetCenterPoint)) {
       let index = atomicAdd(&collisions.count, 1); // Atomically get the next index
-      let pair = CollisionPairs(globalID.x, i);
+      let pair = CollisionPair(currentIdx, i);
       collisions.data[index] = pair;
     }
   }
