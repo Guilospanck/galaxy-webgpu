@@ -1,5 +1,5 @@
 import { mat4, vec3 } from "gl-matrix";
-import { FAR_FRUSTUM, NEAR_FRUSTUM } from "./constants";
+import { DEGREE_TO_RAD, FAR_FRUSTUM, NEAR_FRUSTUM } from "./constants";
 
 /// Yoinked from https://toji.dev/webgpu-best-practices/img-textures
 const webGPUTextureFromImageBitmapOrCanvas = (
@@ -122,10 +122,6 @@ export const createSphereMesh = ({
   return { positionAndTexCoords, indices, normals };
 };
 
-const eccentricity = 0.7;
-const a = 10;
-const rad = 0.0174532925; // 1 deg = 0.0174532925 rad
-
 ///
 ///  Ellipse equation:
 //
@@ -148,17 +144,26 @@ const rad = 0.0174532925; // 1 deg = 0.0174532925 rad
 //
 //   e = sqrt(1-b2/a2) => e2 = (1-b2/a2) => e2-1 = b2/a2 => b2 = (e2-1) * a2
 //
-export const calculateXYZEllipseCoordinates = (degreeAngle: number) => {
-  const temp = (Math.pow(eccentricity, 2) - 1) * Math.pow(a, 2);
+export const calculateXYZEllipseCoordinates = ({
+  degreeAngle,
+  ellipse_a,
+  ellipse_eccentricity,
+}: {
+  degreeAngle: number;
+  ellipse_a: number;
+  ellipse_eccentricity: number;
+}) => {
+  const temp = (Math.pow(ellipse_eccentricity, 2) - 1) * Math.pow(ellipse_a, 2);
   const b = Math.sqrt(temp > 0 ? temp : -1 * temp);
 
-  let theta = degreeAngle * rad;
+  let theta = degreeAngle * DEGREE_TO_RAD;
 
   // Radial distance
   const R =
-    (a * b) /
+    (ellipse_a * b) /
     Math.sqrt(
-      Math.pow(b * Math.cos(theta), 2) + Math.pow(a * Math.sin(theta), 2),
+      Math.pow(b * Math.cos(theta), 2) +
+        Math.pow(ellipse_a * Math.sin(theta), 2),
     );
 
   const x = R * Math.cos(theta);

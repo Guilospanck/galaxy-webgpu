@@ -29,13 +29,19 @@ const perspectiveAspectRatio = canvas.width / canvas.height;
 const emptyVector: vec3 = [0, 0, 0];
 const cameraUp: vec3 = [0, 1, 0];
 
-/// UI related
+///
 const settings = {
   planets: 5,
+  eccentricity: 0.7,
+  ellipse_a: 10,
+  armor: false,
 };
 const setupUI = () => {
   const gui = new GUI();
   gui.add(settings, "planets", 1, 12000).step(1);
+  gui.add(settings, "eccentricity", 0.01, 0.99).step(0.01);
+  gui.add(settings, "ellipse_a", 1, 100).step(1);
+  gui.add(settings, "armor");
 };
 setupUI();
 
@@ -148,6 +154,46 @@ const pipeline = device.createRenderPipeline({
     targets: [{ format }],
   },
   primitive: { topology: "triangle-list" },
+  depthStencil: {
+    format: "depth24plus",
+    depthWriteEnabled: true,
+    depthCompare: "less",
+  },
+});
+
+// Armor pipeline
+const armorPipeline = device.createRenderPipeline({
+  label: "armor render pipeline",
+  layout: device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
+  vertex: {
+    module: shaderModule,
+    entryPoint: "main",
+    buffers: [
+      {
+        arrayStride: 5 * Float32Array.BYTES_PER_ELEMENT, // 3 position + 2 texCoord
+        attributes: [
+          // position
+          {
+            shaderLocation: 0,
+            format: "float32x3",
+            offset: 0,
+          },
+          // texCoord
+          {
+            shaderLocation: 1,
+            format: "float32x2",
+            offset: 3 * Float32Array.BYTES_PER_ELEMENT,
+          },
+        ],
+      },
+    ],
+  },
+  fragment: {
+    module: shaderModule,
+    entryPoint: "armor_fragment",
+    targets: [{ format }],
+  },
+  primitive: { topology: "point-list" },
   depthStencil: {
     format: "depth24plus",
     depthWriteEnabled: true,
@@ -281,7 +327,11 @@ const setModelMatrixUniformBuffer = (): GPUBuffer => {
 
   let previousTranslation: vec3 = [0, 0, 0];
   for (let i = 0; i < settings.planets; i++) {
-    const { x, y, z } = calculateXYZEllipseCoordinates(i % 360);
+    const { x, y, z } = calculateXYZEllipseCoordinates({
+      degreeAngle: i % 360,
+      ellipse_a: settings.ellipse_a,
+      ellipse_eccentricity: settings.eccentricity,
+    });
 
     previousTranslation = vec3.add(emptyVector, previousTranslation, [x, y, z]);
 
@@ -365,8 +415,6 @@ const renderPlanets = async () => {
 
   const renderPass = commandEncoder.beginRenderPass(passDescriptor);
 
-  renderPass.setPipeline(pipeline);
-
   const modelMatrixUniformBuffer = setModelMatrixUniformBuffer();
 
   for (let i = 0; i < settings.planets; i++) {
@@ -397,10 +445,16 @@ const renderPlanets = async () => {
       ],
     });
 
+    renderPass.setPipeline(pipeline);
     renderPass.setVertexBuffer(0, vertexBuffer); // position and texCoords
     renderPass.setIndexBuffer(indexBuffer, "uint32");
     renderPass.setBindGroup(0, bindGroup, [dynamicOffset]);
     renderPass.drawIndexed(indices.length);
+
+    if (settings.armor) {
+      renderPass.setPipeline(armorPipeline);
+      renderPass.drawIndexed(indices.length);
+    }
   }
 
   // Finalise render pass
