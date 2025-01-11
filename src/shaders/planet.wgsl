@@ -8,6 +8,7 @@ struct VertexOutput {
   @location(0) uv: vec2<f32>,
 }
 
+///////////////// Vertex shader step ///////////////////////
 @group(0) @binding(0)
 var<uniform> viewProjectionMatrix: mat4x4<f32>;
 
@@ -22,6 +23,13 @@ fn main(input: VertexInput) -> VertexOutput {
   return output;
 }
 
+@vertex
+fn planet_tail_vertex(@location(0) center: vec3<f32>) -> @builtin(position) vec4<f32> {
+  let output = viewProjectionMatrix * vec4<f32>(center, 1.0);
+  return output;
+}
+
+///////////////// Fragment shader step ///////////////////////
 @group(0) @binding(2)
 var textureSampler: sampler;
 @group(0) @binding(3)
@@ -33,11 +41,16 @@ fn main_fragment(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
 }
 
 @fragment
-fn armor_fragment(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
+fn armor_fragment() -> @location(0) vec4<f32> {
   return vec4<f32>(0.0, 1.0, 0.0, 1.0);
 }
 
-// Compute step 
+@fragment
+fn planet_tail_fragment() -> @location(0) vec4<f32> {
+  return vec4<f32>(0.0, 1.0, 1.0, 1.0);
+}
+
+///////////////// Compute shader step ///////////////////////
 struct CollisionPair {
   a: u32,
   b: u32,

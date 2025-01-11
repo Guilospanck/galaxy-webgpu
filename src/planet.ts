@@ -35,13 +35,15 @@ const settings = {
   eccentricity: 0.7,
   ellipse_a: 10,
   armor: false,
+  tail: false,
 };
 const setupUI = () => {
   const gui = new GUI();
-  gui.add(settings, "planets", 1, 12000).step(1);
+  gui.add(settings, "planets", 1, 12000).step(1); // 12K is not a rookie number in this racket. No need to pump it!
   gui.add(settings, "eccentricity", 0.01, 0.99).step(0.01);
   gui.add(settings, "ellipse_a", 1, 100).step(1);
   gui.add(settings, "armor");
+  gui.add(settings, "tail");
 };
 setupUI();
 
@@ -153,7 +155,7 @@ const pipeline = device.createRenderPipeline({
     entryPoint: "main_fragment",
     targets: [{ format }],
   },
-  primitive: { topology: "triangle-list" },
+  primitive: { topology: "triangle-list" }, // Change this to `point-list` to have a "see-through"
   depthStencil: {
     format: "depth24plus",
     depthWriteEnabled: true,
@@ -191,6 +193,55 @@ const armorPipeline = device.createRenderPipeline({
   fragment: {
     module: shaderModule,
     entryPoint: "armor_fragment",
+    targets: [{ format }],
+  },
+  primitive: { topology: "point-list" },
+  depthStencil: {
+    format: "depth24plus",
+    depthWriteEnabled: true,
+    depthCompare: "less",
+  },
+});
+
+// Bind group for the tail rendering
+const tailBindGroupLayout = device.createBindGroupLayout({
+  label: "tail bind group layout",
+  entries: [
+    {
+      binding: 0, // View-Projection matrix buffer
+      visibility: GPUShaderStage.VERTEX,
+      buffer: {
+        type: "uniform",
+      },
+    },
+  ],
+});
+
+// Tail pipeline
+const tailPipeline = device.createRenderPipeline({
+  label: "tail render pipeline",
+  layout: device.createPipelineLayout({
+    bindGroupLayouts: [tailBindGroupLayout],
+  }),
+  vertex: {
+    module: shaderModule,
+    entryPoint: "planet_tail_vertex",
+    buffers: [
+      {
+        arrayStride: 3 * Float32Array.BYTES_PER_ELEMENT, // 3 center position
+        attributes: [
+          {
+            shaderLocation: 0,
+            format: "float32x3",
+            offset: 0,
+          },
+        ],
+      },
+    ],
+  },
+  fragment: {
+    module: shaderModule,
+    entryPoint: "planet_tail_fragment",
     targets: [{ format }],
   },
   primitive: { topology: "point-list" },
@@ -407,14 +458,46 @@ const createPlanets = (numberOfPlanets: number) => {
 };
 createPlanets(settings.planets);
 
+type PlanetCenterPointAndRadius = {
+  x: number;
+  y: number;
+  z: number;
+  radius: number;
+};
+const PLANET_INITIAL_CENTER: vec4 = [0, 0, 0, 1];
+const getPlanetsCenterPointAndRadius =
+  (): Array<PlanetCenterPointAndRadius> => {
+    const planetsCenterPointAndRadius: Array<PlanetCenterPointAndRadius> = [];
+
+    // Get all current center point (in world space, after model matrix is applied) of each planet, along with its radius
+    for (let i = 0; i < settings.planets; i++) {
+      const dynamicOffset = i * modelMatrixUniformBufferSize;
+
+      const { radius } = planetsBuffers[i];
+
+      let modelMatrix = allModelMatrices.subarray(
+        dynamicOffset / 4,
+        dynamicOffset / 4 + MAT4X4_BYTE_LENGTH,
+      );
+
+      let planetCenterPositionOnScreen: vec4 = vec4.transformMat4(
+        vec4.create(),
+        PLANET_INITIAL_CENTER,
+        modelMatrix,
+      );
+
+      planetsCenterPointAndRadius.push({
+        x: planetCenterPositionOnScreen[0],
+        y: planetCenterPositionOnScreen[1],
+        z: planetCenterPositionOnScreen[2],
+        radius,
+      });
+    }
+
+    return planetsCenterPointAndRadius;
+  };
+
 const renderPlanets = async () => {
-  // Create Command Encoder
-  const commandEncoder = device.createCommandEncoder({
-    label: "command encoder",
-  });
-
-  const renderPass = commandEncoder.beginRenderPass(passDescriptor);
-
   const modelMatrixUniformBuffer = setModelMatrixUniformBuffer();
 
   for (let i = 0; i < settings.planets; i++) {
@@ -456,46 +539,58 @@ const renderPlanets = async () => {
       renderPass.drawIndexed(indices.length);
     }
   }
-
-  // Finalise render pass
-  renderPass.end();
-
-  // Submit Commands
-  device.queue.submit([commandEncoder.finish()]);
 };
 
-const PLANET_INITIAL_CENTER: vec4 = [0, 0, 0, 1];
-const getPlanetsCenterPointAndRadius = (): vec4[] => {
-  const planetsCenterPointAndRadius: vec4[] = [];
+let tailVertexBuffer: GPUBuffer;
+let tailCenterPositions: vec3[] = [];
+const updateVariableTailBuffers = () => {
+  // Get center points
+  const planetsCenter = getPlanetsCenterPointAndRadius().map((item) =>
+    vec3.fromValues(item.x, item.y, item.z),
+  );
+  tailCenterPositions.push(...planetsCenter);
 
-  // Get all current center point (in world space, after model matrix is applied) of each planet, along with its radius
-  for (let i = 0; i < settings.planets; i++) {
-    const dynamicOffset = i * modelMatrixUniformBufferSize;
+  // Create/Update Position (VERTEX BUFFER)
+  tailVertexBuffer = device.createBuffer({
+    label: "tail vertices buffer",
+    size: tailCenterPositions.length * 3 * Float32Array.BYTES_PER_ELEMENT,
+    usage: GPUBufferUsage.VERTEX,
+    mappedAtCreation: true,
+  });
+  new Float32Array(tailVertexBuffer.getMappedRange()).set(
+    tailCenterPositions.map((a) => [...a]).flat() as number[],
+  );
+  tailVertexBuffer.unmap();
+};
+updateVariableTailBuffers();
 
-    const { radius } = planetsBuffers[i];
-
-    let modelMatrix = allModelMatrices.subarray(
-      dynamicOffset / 4,
-      dynamicOffset / 4 + MAT4X4_BYTE_LENGTH,
-    );
-
-    let planetCenterPositionOnScreen: vec4 = vec4.transformMat4(
-      vec4.create(),
-      PLANET_INITIAL_CENTER,
-      modelMatrix,
-    );
-
-    planetsCenterPointAndRadius.push(
-      vec4.fromValues(
-        planetCenterPositionOnScreen[0],
-        planetCenterPositionOnScreen[1],
-        planetCenterPositionOnScreen[2],
-        radius,
-      ),
-    );
+const renderTail = ({ currentFrame }: { currentFrame: number }) => {
+  // Only calculate the tail center position every so often
+  if (currentFrame % 60 === 0 || tailCenterPositions.length === 0) {
+    updateVariableTailBuffers();
   }
 
-  return planetsCenterPointAndRadius;
+  // this depends on the view projection (camera) matrix,
+  // so it needs to be checked almost all the time because
+  // we don't know (we could, but not now) either the camera
+  // has changed or not (translated, rotated)
+  const tailBindGroup = device.createBindGroup({
+    label: "tail bind group element",
+    layout: tailPipeline.getBindGroupLayout(0),
+    entries: [
+      {
+        binding: 0,
+        resource: {
+          buffer: viewProjectionMatrixUniformBuffer,
+        },
+      },
+    ],
+  });
+
+  renderPass.setPipeline(tailPipeline);
+  renderPass.setVertexBuffer(0, tailVertexBuffer);
+  renderPass.setBindGroup(0, tailBindGroup);
+  renderPass.draw(tailCenterPositions.length);
 };
 
 //// COMPUTE SHADER STUFF //////
@@ -539,7 +634,9 @@ let resultsBuffer: GPUBuffer;
 let computeShaderBindGroup: GPUBindGroup;
 
 const recreateComputeShaderBuffers = (numberOfPlanets: number) => {
-  const planetsCenterPoint = getPlanetsCenterPointAndRadius();
+  const planetsCenterPoint = getPlanetsCenterPointAndRadius().map((item) =>
+    vec4.fromValues(item.x, item.y, item.z, item.radius),
+  );
 
   planetsCenterPointAndRadiusBuffer = device.createBuffer({
     label: "compute shader planets center points and radius buffer",
@@ -644,11 +741,11 @@ const checkCollisionViaComputeShader = async ({
   }
 
   // Create Command Encoder
-  const commandEncoder = device.createCommandEncoder({
+  const computeShaderCommandEncoder = device.createCommandEncoder({
     label: "compute pass command encoder",
   });
 
-  const computePass = commandEncoder.beginComputePass();
+  const computePass = computeShaderCommandEncoder.beginComputePass();
   computePass.setPipeline(computeShaderPipeline);
   computePass.setBindGroup(0, computeShaderBindGroup);
 
@@ -656,7 +753,7 @@ const checkCollisionViaComputeShader = async ({
   computePass.dispatchWorkgroups(Math.ceil(numberOfPlanets / WORKGROUP_SIZE));
   computePass.end();
 
-  commandEncoder.copyBufferToBuffer(
+  computeShaderCommandEncoder.copyBufferToBuffer(
     collisionsBuffer,
     0,
     resultsBuffer,
@@ -665,10 +762,10 @@ const checkCollisionViaComputeShader = async ({
   );
 
   // clear collisions buffer
-  commandEncoder.clearBuffer(collisionsBuffer);
+  computeShaderCommandEncoder.clearBuffer(collisionsBuffer);
 
   // Submit Commands
-  device.queue.submit([commandEncoder.finish()]);
+  device.queue.submit([computeShaderCommandEncoder.finish()]);
 
   await resultsBuffer.mapAsync(GPUMapMode.READ);
   const arrayBuffer = resultsBuffer.getMappedRange();
@@ -690,7 +787,10 @@ let currentCameraConfigurations: PointerEventsTransformations = {
   ...pointerEvents,
 };
 
-let t = 0;
+let currentFrame = 0;
+// Renders on the same frame must use the same render pass, otherwise
+// it switches (either one or the other, not both)
+let renderPass: GPURenderPassEncoder;
 function frame() {
   stats.begin();
 
@@ -698,6 +798,13 @@ function frame() {
   passDescriptor.colorAttachments[0].view = context
     .getCurrentTexture()
     .createView();
+
+  const commandEncoder = device.createCommandEncoder({
+    label: "vertex/fragment shaders common command encoder",
+  });
+  // Create a render pass that is common to all renders,
+  // be them vertex/fragment shaders (not compute shaders)
+  renderPass = commandEncoder.beginRenderPass(passDescriptor);
 
   // Only recalculate View-Projection matrix if the camera position has changed.
   if (hasCameraChangedPositions(currentCameraConfigurations, pointerEvents)) {
@@ -712,23 +819,41 @@ function frame() {
     currentPlanets = settings.planets;
   }
 
+  // Render the planets
   renderPlanets();
+
+  // Render the tail (if setting is activated)
+  if (settings.tail) {
+    renderTail({ currentFrame });
+  }
+
+  // Cleanup the tailCenterPositions array when we deactivate the tail setting
+  if (!settings.tail && tailCenterPositions.length > 0) {
+    tailCenterPositions = [];
+  }
 
   // Create the compute shader buffers as soon as we start the
   // application and after we rendered planets
-  if (t === 0) {
+  if (currentFrame === 0) {
     recreateComputeShaderBuffers(settings.planets);
   }
 
   // Only check for collisions every so often
-  if (t % 1233 === 0) {
+  // TODO: change to a meaningful number
+  if (currentFrame % 1233 === 0) {
     checkCollisionViaComputeShader({
       numberOfPlanets: settings.planets,
       recreateBuffers: currentPlanetsForComputeShader !== settings.planets,
     });
     currentPlanetsForComputeShader = settings.planets;
   }
-  t++;
+  currentFrame++;
+
+  // Finalise render pass (common to all vertex/fragment shaders, not compute shader)
+  renderPass.end();
+
+  // Submit Commands
+  device.queue.submit([commandEncoder.finish()]);
 
   stats.end();
 
