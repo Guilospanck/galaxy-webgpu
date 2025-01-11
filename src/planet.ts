@@ -1,4 +1,9 @@
-import { MAT4X4_BYTE_LENGTH, WORKGROUP_SIZE } from "./constants";
+import {
+  CHECK_COLLISION_FREQUENCY,
+  FULL_CIRCUMFERENCE,
+  MAT4X4_BYTE_LENGTH,
+  WORKGROUP_SIZE,
+} from "./constants";
 import { GUI } from "dat.gui";
 import {
   calculateXYZEllipseCoordinates,
@@ -30,7 +35,14 @@ const perspectiveAspectRatio = canvas.width / canvas.height;
 const emptyVector: vec3 = [0, 0, 0];
 const cameraUp: vec3 = [0, 1, 0];
 
-///
+let currentFrame = 0;
+// Every time the GUI changes, we want to reset the currentFrame count
+// It is as if the frame had just began.
+// TODO: maybe it's possible to add a global callback to the GUI and not
+// a property-based.
+const onGUIChange = () => {
+  currentFrame = 0;
+};
 const settings = {
   planets: 5,
   eccentricity: 0.7,
@@ -40,11 +52,14 @@ const settings = {
 };
 const setupUI = () => {
   const gui = new GUI();
-  gui.add(settings, "planets", 1, 12000).step(1); // 12K is not a rookie number in this racket. No need to pump it!
-  gui.add(settings, "eccentricity", 0.01, 0.99).step(0.01);
-  gui.add(settings, "ellipse_a", 1, 100).step(1);
-  gui.add(settings, "armor");
-  gui.add(settings, "tail");
+  gui.add(settings, "planets", 1, 12000).step(1).onChange(onGUIChange); // 12K is not a rookie number in this racket. No need to pump it!
+  gui
+    .add(settings, "eccentricity", 0.01, 0.99)
+    .step(0.01)
+    .onChange(onGUIChange);
+  gui.add(settings, "ellipse_a", 1, 100).step(1).onChange(onGUIChange);
+  gui.add(settings, "armor").onChange(onGUIChange);
+  gui.add(settings, "tail").onChange(onGUIChange);
 };
 setupUI();
 
@@ -565,10 +580,24 @@ const updateVariableTailBuffers = () => {
 };
 updateVariableTailBuffers();
 
+const hasPointsCompletedOneFullCircumference = (currentFrame: number) => {
+  return currentFrame / stats.getFPS() >= FULL_CIRCUMFERENCE;
+};
+
+let currentNumberOfPlanetsForTailCalculation = settings.planets;
 const renderTail = ({ currentFrame }: { currentFrame: number }) => {
-  // Only calculate the tail center position every so often
-  if (currentFrame % 60 === 0 || tailCenterPositions.length === 0) {
+  // Only calculate the tail center positions when:
+  // - the points haven't completed a circumference already (
+  // as we don't want to write already written points);
+  // - OR the array of tailCenterPositions is empty;
+  // // TODO: improve
+  if (
+    (currentFrame % stats.getFPS() === 0 &&
+      !hasPointsCompletedOneFullCircumference(currentFrame)) ||
+    tailCenterPositions.length === 0
+  ) {
     updateVariableTailBuffers();
+    currentNumberOfPlanetsForTailCalculation = settings.planets;
   }
 
   // this depends on the view projection (camera) matrix,
@@ -788,7 +817,6 @@ let currentCameraConfigurations: PointerEventsTransformations = {
   ...pointerEvents,
 };
 
-let currentFrame = 0;
 // Renders on the same frame must use the same render pass, otherwise
 // it switches (either one or the other, not both)
 let renderPass: GPURenderPassEncoder;
@@ -840,8 +868,7 @@ function frame() {
   }
 
   // Only check for collisions every so often
-  // TODO: change to a meaningful number
-  if (currentFrame % 1233 === 0) {
+  if (currentFrame % CHECK_COLLISION_FREQUENCY === 0) {
     checkCollisionViaComputeShader({
       numberOfPlanets: settings.planets,
       recreateBuffers: currentPlanetsForComputeShader !== settings.planets,
