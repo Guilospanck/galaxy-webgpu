@@ -5,3 +5,4 @@ export const WORKGROUP_SIZE = 64;
 export const DEGREE_TO_RAD = 0.0174532925; // 1 deg = 0.0174532925 rad
 export const FULL_CIRCUMFERENCE = 360; // 360 degrees
 export const CHECK_COLLISION_FREQUENCY = 1097; // Check for collisions every currentFrame % 1097 === 0
+export const RENDER_TAIL_FREQUENCY = 100;

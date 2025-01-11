@@ -51,4 +51,9 @@ Not sure it is working.
 
 Not sure it is working properly.
 
+## Parametrise the `primitive` topology
+
+primitive: { topology: "triangle-list" }, // Change this to `point-list` to have a "see-through"
+
+## Parametrise the lat and long bands
 

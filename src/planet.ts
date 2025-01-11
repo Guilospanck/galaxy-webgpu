@@ -2,6 +2,7 @@ import {
   CHECK_COLLISION_FREQUENCY,
   FULL_CIRCUMFERENCE,
   MAT4X4_BYTE_LENGTH,
+  RENDER_TAIL_FREQUENCY,
   WORKGROUP_SIZE,
 } from "./constants";
 import { GUI } from "dat.gui";
@@ -38,9 +39,7 @@ const cameraUp: vec3 = [0, 1, 0];
 let currentFrame = 0;
 // Every time the GUI changes, we want to reset the currentFrame count
 // It is as if the frame had just began.
-// TODO: maybe it's possible to add a global callback to the GUI and not
-// a property-based.
-const onGUIChange = () => {
+const resetCurrentFrame = () => {
   currentFrame = 0;
 };
 const settings = {
@@ -52,14 +51,22 @@ const settings = {
 };
 const setupUI = () => {
   const gui = new GUI();
-  gui.add(settings, "planets", 1, 12000).step(1).onChange(onGUIChange); // 12K is not a rookie number in this racket. No need to pump it!
+  gui.add(settings, "planets", 1, 12000).step(1).onChange(resetCurrentFrame); // 12K is not a rookie number in this racket. No need to pump it!
   gui
     .add(settings, "eccentricity", 0.01, 0.99)
     .step(0.01)
-    .onChange(onGUIChange);
-  gui.add(settings, "ellipse_a", 1, 100).step(1).onChange(onGUIChange);
-  gui.add(settings, "armor").onChange(onGUIChange);
-  gui.add(settings, "tail").onChange(onGUIChange);
+    .onChange(resetCurrentFrame);
+  gui.add(settings, "ellipse_a", 1, 100).step(1).onChange(resetCurrentFrame);
+  gui.add(settings, "armor").onChange(resetCurrentFrame);
+  gui.add(settings, "tail").onChange((tail: boolean) => {
+    if (!tail) {
+      // Cleanup the tailCenterPositions array when we deactivate the tail setting
+      tailCenterPositions = [];
+      pointerPerPlanet = 0;
+    }
+
+    resetCurrentFrame();
+  });
 };
 setupUI();
 
@@ -559,6 +566,7 @@ const renderPlanets = async () => {
 
 let tailVertexBuffer: GPUBuffer;
 let tailCenterPositions: vec3[] = [];
+let pointerPerPlanet = 0;
 const updateVariableTailBuffers = () => {
   // Get center points
   const planetsCenter = getPlanetsCenterPointAndRadius().map((item) =>
@@ -577,27 +585,29 @@ const updateVariableTailBuffers = () => {
     tailCenterPositions.map((a) => [...a]).flat() as number[],
   );
   tailVertexBuffer.unmap();
+
+  // update how many points a planet has
+  pointerPerPlanet++;
 };
 updateVariableTailBuffers();
 
-const hasPointsCompletedOneFullCircumference = (currentFrame: number) => {
-  return currentFrame / stats.getFPS() >= FULL_CIRCUMFERENCE;
+const hasPointsCompletedOneFullCircumference = () => {
+  return currentFrame / RENDER_TAIL_FREQUENCY >= FULL_CIRCUMFERENCE;
 };
 
-let currentNumberOfPlanetsForTailCalculation = settings.planets;
-const renderTail = ({ currentFrame }: { currentFrame: number }) => {
+const renderTail = () => {
   // Only calculate the tail center positions when:
   // - the points haven't completed a circumference already (
-  // as we don't want to write already written points);
+  // as we don't want to write already written points) AND
+  // the current frame is a multiple of the current RENDER_TAIL_FREQUENCY;
   // - OR the array of tailCenterPositions is empty;
-  // // TODO: improve
+
   if (
-    (currentFrame % stats.getFPS() === 0 &&
-      !hasPointsCompletedOneFullCircumference(currentFrame)) ||
+    (currentFrame % RENDER_TAIL_FREQUENCY === 0 &&
+      !hasPointsCompletedOneFullCircumference()) ||
     tailCenterPositions.length === 0
   ) {
     updateVariableTailBuffers();
-    currentNumberOfPlanetsForTailCalculation = settings.planets;
   }
 
   // this depends on the view projection (camera) matrix,
@@ -620,7 +630,9 @@ const renderTail = ({ currentFrame }: { currentFrame: number }) => {
   renderPass.setPipeline(tailPipeline);
   renderPass.setVertexBuffer(0, tailVertexBuffer);
   renderPass.setBindGroup(0, tailBindGroup);
-  renderPass.draw(tailCenterPositions.length);
+  renderPass.draw(
+    tailCenterPositions.slice(0, pointerPerPlanet * settings.planets).length,
+  );
 };
 
 //// COMPUTE SHADER STUFF //////
@@ -853,12 +865,7 @@ function frame() {
 
   // Render the tail (if setting is activated)
   if (settings.tail) {
-    renderTail({ currentFrame });
-  }
-
-  // Cleanup the tailCenterPositions array when we deactivate the tail setting
-  if (!settings.tail && tailCenterPositions.length > 0) {
-    tailCenterPositions = [];
+    renderTail();
   }
 
   // Create the compute shader buffers as soon as we start the
