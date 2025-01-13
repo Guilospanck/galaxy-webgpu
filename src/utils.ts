@@ -133,41 +133,37 @@ export const createSphereMesh = ({
 //
 //   x^2/a^2 + y^2/b^2 = 1
 //
-//   x = (1 - y^2/b^2) * a^2
-//   y = (1 - x^2/a^2) * b^2
-//
 //   Radial distance, depends of the angle:
 //
-//   R(theta) = (a*b)/Math.sqrt((b*cost)^2 + (a*sint)^2)
+//   R = \frac{1}{\sqrt{ \frac{\cos^2\theta}{a^2} + \frac{\sin^2\theta}{b^2} } }
 //
-//   Eccentricity;
+//   cos²x = (cos x)² ≠ cos x²
 //
-//   e = sqrt(1-b2/a2) => e2 = (1-b2/a2) => e2-1 = b2/a2 => b2 = (e2-1) * a2
+//   Eccentricity:
+//
+//   e = Math.sqrt(Math.pow(a, 2) - Math.pow(b, 2)) / a
+//   => Math.pow(a * e, 2) =  Math.pow(a, 2) - Math.pow(b, 2)
+//   => -b2 = (ae)2 - a2
+//   => b2 = a2 - (ae)2
+//
 //
 export const calculateXYZEllipseCoordinates = ({
   degreeAngle,
-  ellipse_a,
-  ellipse_eccentricity,
+  ellipse_a: a,
+  ellipse_eccentricity: eccentricity,
 }: {
   degreeAngle: number;
   ellipse_a: number;
   ellipse_eccentricity: number;
 }) => {
-  const temp = (Math.pow(ellipse_eccentricity, 2) - 1) * Math.pow(ellipse_a, 2);
-  const b = Math.sqrt(temp > 0 ? temp : -1 * temp);
+  const a2 = Math.pow(a, 2);
+  const b2 = a2 - Math.pow(a * eccentricity, 2);
+  const b = Math.sqrt(b2);
 
   let theta = degreeAngle * DEGREE_TO_RAD;
 
-  // Radial distance
-  const R =
-    (ellipse_a * b) /
-    Math.sqrt(
-      Math.pow(b * Math.cos(theta), 2) +
-        Math.pow(ellipse_a * Math.sin(theta), 2),
-    );
-
-  const x = R * Math.cos(theta);
-  const y = R * Math.sin(theta);
+  const x = a * Math.cos(theta);
+  const y = b * Math.sin(theta);
   const z = 1;
 
   return { x, y, z };

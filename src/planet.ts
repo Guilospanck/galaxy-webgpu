@@ -3,6 +3,8 @@ import {
   FULL_CIRCUMFERENCE,
   MAT4X4_BYTE_LENGTH,
   RENDER_TAIL_FREQUENCY,
+  ROTATION_SPEED_SENSITIVITY,
+  TRANSLATION_SPEED_SENSITIVITY,
   WORKGROUP_SIZE,
 } from "./constants";
 import { GUI } from "dat.gui";
@@ -416,8 +418,9 @@ let allModelMatrices = new Float32Array(
     Float32Array.BYTES_PER_ELEMENT,
 );
 
+const lastAngleForPlanet: Record<number, number> = {};
 const setModelMatrixUniformBuffer = (): GPUBuffer => {
-  const rotation = new Date().getTime() * 0.0001;
+  const rotation = new Date().getTime() * ROTATION_SPEED_SENSITIVITY;
 
   allModelMatrices = new Float32Array(
     (modelMatrixUniformBufferSize * settings.planets) /
@@ -426,15 +429,19 @@ const setModelMatrixUniformBuffer = (): GPUBuffer => {
 
   let previousTranslation: vec3 = [0, 0, 0];
   for (let i = 0; i < settings.planets; i++) {
+    const angle = ((lastAngleForPlanet[i] ?? 0) + 1) % FULL_CIRCUMFERENCE;
     const { x, y, z } = calculateXYZEllipseCoordinates({
-      degreeAngle: i % 360,
+      degreeAngle: angle,
       ellipse_a: settings.ellipse_a,
       ellipse_eccentricity: settings.eccentricity,
     });
 
+    lastAngleForPlanet[i] = angle;
+
     previousTranslation = vec3.add(emptyVector, previousTranslation, [x, y, z]);
 
-    const translation = new Date().getTime() * 0.0001 + i;
+    const translation =
+      new Date().getTime() * TRANSLATION_SPEED_SENSITIVITY + i;
 
     // Matrix responsible for the planet movement of translation
     const translationMatrix = mat4.rotateZ(

@@ -37,15 +37,13 @@ Check https://github.com/mrdoob/stats.js
 
 ## (Done) Add collision
 
+## (Done) Type `planetsBuffers`
+
+## (Done) Check ellipse movement
+
 ## Add resize observer to the canvas
 
-## Type `planetsBuffers`
-
 ## Add parametrization to planet movements
-
-## Check ellipse movement
-
-Not sure it is working.
 
 ## Check camera movement
 
