@@ -42,31 +42,56 @@ let currentFrame = 0;
 const resetCurrentFrame = () => {
   currentFrame = 0;
 };
+
+const resetTailVariables = () => {
+  tailCenterPositionsComplete = [];
+  coordinatesPerPlanet = 0;
+};
+
+const commonSettingsOnChange = () => {
+  resetCurrentFrame();
+};
+
 const settings = {
-  planets: 5,
+  planets: 2,
   eccentricity: 0.7,
   ellipse_a: 10,
   armor: false,
   tail: false,
+  checkCollisions: false,
 };
 const setupUI = () => {
   const gui = new GUI();
-  gui.add(settings, "planets", 1, 12000).step(1).onChange(resetCurrentFrame); // 12K is not a rookie number in this racket. No need to pump it!
+  gui
+    .add(settings, "planets", 1, 12000)
+    .step(1)
+    .onChange((numOfPlanets) => {
+      createPlanets(numOfPlanets);
+      if (settings.tail) {
+        resetTailVariables();
+        updateVariableTailBuffers();
+      }
+      resetCurrentFrame();
+    }); // 12K is not a rookie number in this racket. No need to pump it!
   gui
     .add(settings, "eccentricity", 0.01, 0.99)
     .step(0.01)
-    .onChange(resetCurrentFrame);
-  gui.add(settings, "ellipse_a", 1, 100).step(1).onChange(resetCurrentFrame);
-  gui.add(settings, "armor").onChange(resetCurrentFrame);
+    .onChange(commonSettingsOnChange);
+  gui
+    .add(settings, "ellipse_a", 1, 100)
+    .step(1)
+    .onChange(commonSettingsOnChange);
+  gui.add(settings, "armor").onChange(commonSettingsOnChange);
   gui.add(settings, "tail").onChange((tail: boolean) => {
     if (!tail) {
-      // Cleanup the tailCenterPositions array when we deactivate the tail setting
-      tailCenterPositions = [];
-      pointerPerPlanet = 0;
+      resetTailVariables();
+    } else {
+      updateVariableTailBuffers();
     }
 
     resetCurrentFrame();
   });
+  gui.add(settings, "checkCollisions").onChange(commonSettingsOnChange);
 };
 setupUI();
 
@@ -251,7 +276,7 @@ const tailPipeline = device.createRenderPipeline({
     entryPoint: "planet_tail_vertex",
     buffers: [
       {
-        arrayStride: 3 * Float32Array.BYTES_PER_ELEMENT, // 3 center position
+        arrayStride: 3 * Float32Array.BYTES_PER_ELEMENT, // 3 center position (x, y, z)
         attributes: [
           {
             shaderLocation: 0,
@@ -486,6 +511,7 @@ type PlanetCenterPointAndRadius = {
   y: number;
   z: number;
   radius: number;
+  planetIdx: number;
 };
 const PLANET_INITIAL_CENTER: vec4 = [0, 0, 0, 1];
 const getPlanetsCenterPointAndRadius =
@@ -514,6 +540,7 @@ const getPlanetsCenterPointAndRadius =
         y: planetCenterPositionOnScreen[1],
         z: planetCenterPositionOnScreen[2],
         radius,
+        planetIdx: i,
       });
     }
 
@@ -566,13 +593,22 @@ const renderPlanets = async () => {
 
 let tailVertexBuffer: GPUBuffer;
 let tailCenterPositions: vec3[] = [];
-let pointerPerPlanet = 0;
+let tailCenterPositionsComplete: PlanetCenterPointAndRadius[] = [];
+let coordinatesPerPlanet = 0;
 const updateVariableTailBuffers = () => {
   // Get center points
-  const planetsCenter = getPlanetsCenterPointAndRadius().map((item) =>
-    vec3.fromValues(item.x, item.y, item.z),
-  );
-  tailCenterPositions.push(...planetsCenter);
+  const planetsCenter = getPlanetsCenterPointAndRadius();
+  tailCenterPositionsComplete.push(...planetsCenter);
+
+  // Order the tailCenterPosition vector to have all
+  // planets coordinates ordered
+  tailCenterPositions = [];
+  for (let i = 0; i < settings.planets; i++) {
+    const coordinatesOfPlanetCenterPoint = tailCenterPositionsComplete
+      .filter((item) => item.planetIdx === i)
+      .map((item) => vec3.fromValues(item.x, item.y, item.z));
+    tailCenterPositions.push(...coordinatesOfPlanetCenterPoint);
+  }
 
   // Create/Update Position (VERTEX BUFFER)
   tailVertexBuffer = device.createBuffer({
@@ -587,9 +623,8 @@ const updateVariableTailBuffers = () => {
   tailVertexBuffer.unmap();
 
   // update how many points a planet has
-  pointerPerPlanet++;
+  coordinatesPerPlanet++;
 };
-updateVariableTailBuffers();
 
 const hasPointsCompletedOneFullCircumference = () => {
   return currentFrame / RENDER_TAIL_FREQUENCY >= FULL_CIRCUMFERENCE;
@@ -631,7 +666,8 @@ const renderTail = () => {
   renderPass.setVertexBuffer(0, tailVertexBuffer);
   renderPass.setBindGroup(0, tailBindGroup);
   renderPass.draw(
-    tailCenterPositions.slice(0, pointerPerPlanet * settings.planets).length,
+    tailCenterPositions.slice(0, coordinatesPerPlanet * settings.planets)
+      .length,
   );
 };
 
@@ -820,11 +856,9 @@ const checkCollisionViaComputeShader = async ({
 };
 
 /// Variables to check for conditional rendering
-// INFO: this variable is NOT updated automatically when settings.planets change.
-let currentPlanets = settings.planets;
 // INFO: this is different because the compute shader does not run on every frame
 let currentPlanetsForComputeShader = settings.planets;
-// INFO: this also is NOT when rotation angles change
+// INFO: this variavble does not update automatically when rotation angles change
 let currentCameraConfigurations: PointerEventsTransformations = {
   ...pointerEvents,
 };
@@ -853,13 +887,6 @@ function frame() {
     currentCameraConfigurations = { ...pointerEvents };
   }
 
-  // Only create new planets if we change the settings.planets UI variable
-  const numberOfPlanetsChanged = currentPlanets !== settings.planets;
-  if (numberOfPlanetsChanged) {
-    createPlanets(settings.planets);
-    currentPlanets = settings.planets;
-  }
-
   // Render the planets
   renderPlanets();
 
@@ -870,12 +897,15 @@ function frame() {
 
   // Create the compute shader buffers as soon as we start the
   // application and after we rendered planets
-  if (currentFrame === 0) {
+  if (currentFrame === 0 && settings.checkCollisions) {
     recreateComputeShaderBuffers(settings.planets);
   }
 
   // Only check for collisions every so often
-  if (currentFrame % CHECK_COLLISION_FREQUENCY === 0) {
+  if (
+    currentFrame % CHECK_COLLISION_FREQUENCY === 0 &&
+    settings.checkCollisions
+  ) {
     checkCollisionViaComputeShader({
       numberOfPlanets: settings.planets,
       recreateBuffers: currentPlanetsForComputeShader !== settings.planets,
