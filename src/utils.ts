@@ -1,5 +1,10 @@
 import { mat4, vec3 } from "gl-matrix";
-import { DEGREE_TO_RAD, FAR_FRUSTUM, NEAR_FRUSTUM } from "./constants";
+import {
+  DEGREE_TO_RAD,
+  FAR_FRUSTUM,
+  NEAR_FRUSTUM,
+  TopologyEnum,
+} from "./constants";
 
 /// Yoinked from https://toji.dev/webgpu-best-practices/img-textures
 const webGPUTextureFromImageBitmapOrCanvas = (

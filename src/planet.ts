@@ -1,9 +1,24 @@
 import {
   CHECK_COLLISION_FREQUENCY,
+  DEFAULT_ECCENTRICITY,
+  DEFAULT_ELLIPSE_A,
+  DEFAULT_PLANETS,
+  DEFAULT_TOPOLOGY,
+  ECCENTRICITY_STEP,
+  ELLIPSE_A_STEP,
   FULL_CIRCUMFERENCE,
   MAT4X4_BYTE_LENGTH,
+  MAX_ECCENTRICITY,
+  MAX_ELLIPSE_A,
+  MAX_PLANETS,
+  MIN_ECCENTRICITY,
+  MIN_ELLIPSE_A,
+  MIN_PLANETS,
+  PLANETS_STEP,
   RENDER_TAIL_FREQUENCY,
   ROTATION_SPEED_SENSITIVITY,
+  TOPOLOGIES,
+  TopologyEnum,
   TRANSLATION_SPEED_SENSITIVITY,
   WORKGROUP_SIZE,
 } from "./constants";
@@ -55,18 +70,19 @@ const commonSettingsOnChange = () => {
 };
 
 const settings = {
-  planets: 2,
-  eccentricity: 0.7,
-  ellipse_a: 10,
+  planets: DEFAULT_PLANETS,
+  eccentricity: DEFAULT_ECCENTRICITY,
+  ellipse_a: DEFAULT_ELLIPSE_A,
   armor: false,
   tail: false,
   checkCollisions: false,
+  topology: DEFAULT_TOPOLOGY,
 };
 const setupUI = () => {
   const gui = new GUI();
   gui
-    .add(settings, "planets", 1, 12000)
-    .step(1)
+    .add(settings, "planets", MIN_PLANETS, MAX_PLANETS)
+    .step(PLANETS_STEP)
     .onChange((numOfPlanets) => {
       createPlanets(numOfPlanets);
       if (settings.tail) {
@@ -74,14 +90,14 @@ const setupUI = () => {
         updateVariableTailBuffers();
       }
       resetCurrentFrame();
-    }); // 12K is not a rookie number in this racket. No need to pump it!
+    });
   gui
-    .add(settings, "eccentricity", 0.01, 0.99)
-    .step(0.01)
+    .add(settings, "eccentricity", MIN_ECCENTRICITY, MAX_ECCENTRICITY)
+    .step(ECCENTRICITY_STEP)
     .onChange(commonSettingsOnChange);
   gui
-    .add(settings, "ellipse_a", 1, 100)
-    .step(1)
+    .add(settings, "ellipse_a", MIN_ELLIPSE_A, MAX_ELLIPSE_A)
+    .step(ELLIPSE_A_STEP)
     .onChange(commonSettingsOnChange);
   gui.add(settings, "armor").onChange(commonSettingsOnChange);
   gui.add(settings, "tail").onChange((tail: boolean) => {
@@ -94,6 +110,7 @@ const setupUI = () => {
     resetCurrentFrame();
   });
   gui.add(settings, "checkCollisions").onChange(commonSettingsOnChange);
+  gui.add(settings, "topology", TOPOLOGIES).onChange(commonSettingsOnChange);
 };
 setupUI();
 
@@ -173,10 +190,11 @@ const bindGroupLayout = device.createBindGroupLayout({
   ],
 });
 
-// Pipeline
-const pipeline = device.createRenderPipeline({
+const baseRenderPipeline: GPURenderPipelineDescriptor = {
   label: "render pipeline",
-  layout: device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
+  layout: device.createPipelineLayout({
+    bindGroupLayouts: [bindGroupLayout],
+  }),
   vertex: {
     module: shaderModule,
     entryPoint: "main",
@@ -205,12 +223,25 @@ const pipeline = device.createRenderPipeline({
     entryPoint: "main_fragment",
     targets: [{ format }],
   },
-  primitive: { topology: "triangle-list" }, // Change this to `point-list` to have a "see-through"
   depthStencil: {
     format: "depth24plus",
     depthWriteEnabled: true,
     depthCompare: "less",
   },
+};
+
+// Pipelines based on topology
+const triangleListRenderPipeline = device.createRenderPipeline({
+  ...baseRenderPipeline,
+  primitive: { topology: TopologyEnum.TRIANGLE_LIST }, // Change this to `point-list` to have a "see-through"
+});
+const pointListRenderPipeline = device.createRenderPipeline({
+  ...baseRenderPipeline,
+  primitive: { topology: TopologyEnum.POINT_LIST }, // Change this to `point-list` to have a "see-through"
+});
+const lineListRenderPipeline = device.createRenderPipeline({
+  ...baseRenderPipeline,
+  primitive: { topology: TopologyEnum.LINE_LIST }, // Change this to `point-list` to have a "see-through"
 });
 
 // Armor pipeline
@@ -430,13 +461,13 @@ const setModelMatrixUniformBuffer = (): GPUBuffer => {
   let previousTranslation: vec3 = [0, 0, 0];
   for (let i = 0; i < settings.planets; i++) {
     const angle = ((lastAngleForPlanet[i] ?? 0) + 1) % FULL_CIRCUMFERENCE;
+    lastAngleForPlanet[i] = angle;
+
     const { x, y, z } = calculateXYZEllipseCoordinates({
       degreeAngle: angle,
       ellipse_a: settings.ellipse_a,
       ellipse_eccentricity: settings.eccentricity,
     });
-
-    lastAngleForPlanet[i] = angle;
 
     previousTranslation = vec3.add(emptyVector, previousTranslation, [x, y, z]);
 
@@ -554,8 +585,25 @@ const getPlanetsCenterPointAndRadius =
     return planetsCenterPointAndRadius;
   };
 
+export const getPipelineBasedOnCurrentTopology = (
+  topology: TopologyEnum,
+): GPURenderPipeline => {
+  switch (topology) {
+    case TopologyEnum.LINE_LIST: {
+      return lineListRenderPipeline;
+    }
+    case TopologyEnum.TRIANGLE_LIST: {
+      return triangleListRenderPipeline;
+    }
+    case TopologyEnum.POINT_LIST: {
+      return pointListRenderPipeline;
+    }
+  }
+};
+
 const renderPlanets = async () => {
   const modelMatrixUniformBuffer = setModelMatrixUniformBuffer();
+  const pipeline = getPipelineBasedOnCurrentTopology(settings.topology);
 
   for (let i = 0; i < settings.planets; i++) {
     const dynamicOffset = i * modelMatrixUniformBufferSize;

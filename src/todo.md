@@ -41,17 +41,16 @@ Check https://github.com/mrdoob/stats.js
 
 ## (Done) Check ellipse movement
 
-## Add resize observer to the canvas
+## (Done) Add parametrization to planet movements
 
-## Add parametrization to planet movements
-
-## Check camera movement
-
-Not sure it is working properly.
-
-## Parametrise the `primitive` topology
+## (Done) Parametrise the `primitive` topology
 
 primitive: { topology: "triangle-list" }, // Change this to `point-list` to have a "see-through"
 
 ## Parametrise the lat and long bands
 
+## Check camera movement
+
+Not sure it is working properly.
+
+## Add resize observer to the canvas
