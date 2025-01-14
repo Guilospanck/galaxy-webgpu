@@ -47,7 +47,7 @@ Check https://github.com/mrdoob/stats.js
 
 primitive: { topology: "triangle-list" }, // Change this to `point-list` to have a "see-through"
 
-## Parametrise the lat and long bands
+## (Done) Parametrise the lat and long bands
 
 ## Check camera movement
 

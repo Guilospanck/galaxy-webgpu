@@ -41,3 +41,13 @@ export const DEFAULT_ELLIPSE_A = 10;
 export const ELLIPSE_A_STEP = 1;
 export const MIN_ELLIPSE_A = 1;
 export const MAX_ELLIPSE_A = 100;
+
+export const DEFAULT_LAT_BANDS = 40;
+export const LAT_BANDS_STEP = 1;
+export const MIN_LAT_BANDS = 2;
+export const MAX_LAT_BANDS = 100;
+
+export const DEFAULT_LONG_BANDS = 40;
+export const LONG_BANDS_STEP = 1;
+export const MIN_LONG_BANDS = 2;
+export const MAX_LONG_BANDS = 100;

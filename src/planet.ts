@@ -2,6 +2,8 @@ import {
   CHECK_COLLISION_FREQUENCY,
   DEFAULT_ECCENTRICITY,
   DEFAULT_ELLIPSE_A,
+  DEFAULT_LAT_BANDS,
+  DEFAULT_LONG_BANDS,
   DEFAULT_PLANETS,
   DEFAULT_TOPOLOGY,
   ECCENTRICITY_STEP,
@@ -10,9 +12,13 @@ import {
   MAT4X4_BYTE_LENGTH,
   MAX_ECCENTRICITY,
   MAX_ELLIPSE_A,
+  MAX_LAT_BANDS,
+  MAX_LONG_BANDS,
   MAX_PLANETS,
   MIN_ECCENTRICITY,
   MIN_ELLIPSE_A,
+  MIN_LAT_BANDS,
+  MIN_LONG_BANDS,
   MIN_PLANETS,
   PLANETS_STEP,
   RENDER_TAIL_FREQUENCY,
@@ -77,6 +83,8 @@ const settings = {
   tail: false,
   checkCollisions: false,
   topology: DEFAULT_TOPOLOGY,
+  latBands: DEFAULT_LAT_BANDS,
+  longBands: DEFAULT_LONG_BANDS,
 };
 const setupUI = () => {
   const gui = new GUI();
@@ -111,6 +119,16 @@ const setupUI = () => {
   });
   gui.add(settings, "checkCollisions").onChange(commonSettingsOnChange);
   gui.add(settings, "topology", TOPOLOGIES).onChange(commonSettingsOnChange);
+  gui.add(settings, "latBands", MIN_LAT_BANDS, MAX_LAT_BANDS).onChange(() => {
+    createPlanets(settings.planets);
+    commonSettingsOnChange;
+  });
+  gui
+    .add(settings, "longBands", MIN_LONG_BANDS, MAX_LONG_BANDS)
+    .onChange(() => {
+      createPlanets(settings.planets);
+      commonSettingsOnChange;
+    });
 };
 setupUI();
 
@@ -401,17 +419,13 @@ type PlanetInfo = {
 
 const createPlanetAndItsBuffers = ({
   radius = 1,
-  latBands = 40,
-  longBands = 40,
 }: {
   radius?: number;
-  latBands?: number;
-  longBands?: number;
 }): PlanetInfo => {
   const { positionAndTexCoords, indices } = createSphereMesh({
     radius,
-    latBands,
-    longBands,
+    latBands: settings.latBands,
+    longBands: settings.longBands,
   });
 
   // Create Position and TexCoords Buffer (VERTEX BUFFER)
@@ -515,12 +529,15 @@ const setModelMatrixUniformBuffer = (): GPUBuffer => {
 /// it will still keep those states in memory.
 /// This is a trade-off between saving this states in memory or re-creating them.
 ///
-const planetsBuffers: PlanetInfo[] = [];
+let planetsBuffers: PlanetInfo[] = [];
 const createPlanets = (numberOfPlanets: number) => {
+  planetsBuffers = [];
   for (let i = 0; i < numberOfPlanets; i++) {
-    if (i < planetsBuffers.length - 1) {
-      continue;
-    }
+    // TODO: improve this. It is commented out because of
+    // the change in the latBands and lonBands settings
+    // if (i < planetsBuffers.length - 1) {
+    //   continue;
+    // }
 
     let radius = Math.random() * 2 + 1;
 
