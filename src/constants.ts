@@ -54,5 +54,5 @@ export const MAX_LONG_BANDS = 100;
 
 /// Pointer events
 export const ZOOM_FACTOR_SENSITIVITY = 1.05;
-export const PAN_SENSITIVITY = 0.01;
+export const PAN_SENSITIVITY = 0.7;
 export const ROTATION_SENSITIVITY = 0.01;

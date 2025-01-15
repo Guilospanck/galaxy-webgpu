@@ -1,34 +1,13 @@
 import {
   CHECK_COLLISION_FREQUENCY,
-  DEFAULT_ECCENTRICITY,
-  DEFAULT_ELLIPSE_A,
-  DEFAULT_LAT_BANDS,
-  DEFAULT_LONG_BANDS,
-  DEFAULT_PLANETS,
-  DEFAULT_TOPOLOGY,
-  ECCENTRICITY_STEP,
-  ELLIPSE_A_STEP,
   FULL_CIRCUMFERENCE,
   MAT4X4_BYTE_LENGTH,
-  MAX_ECCENTRICITY,
-  MAX_ELLIPSE_A,
-  MAX_LAT_BANDS,
-  MAX_LONG_BANDS,
-  MAX_PLANETS,
-  MIN_ECCENTRICITY,
-  MIN_ELLIPSE_A,
-  MIN_LAT_BANDS,
-  MIN_LONG_BANDS,
-  MIN_PLANETS,
-  PLANETS_STEP,
   RENDER_TAIL_FREQUENCY,
   ROTATION_SPEED_SENSITIVITY,
-  TOPOLOGIES,
   TopologyEnum,
   TRANSLATION_SPEED_SENSITIVITY,
   WORKGROUP_SIZE,
 } from "./constants";
-import { GUI } from "dat.gui";
 import {
   calculateXYZEllipseCoordinates,
   createSphereMesh,
@@ -45,6 +24,7 @@ import { mat4, vec3, vec4 } from "gl-matrix";
 import { PlanetTextures } from "./textures";
 import planetWGSL from "./shaders/planet.wgsl?raw";
 import Stats from "stats.js";
+import { SettingsType, setupUI, uiSettings } from "./ui";
 
 const stats = new Stats();
 
@@ -75,62 +55,60 @@ const commonSettingsOnChange = () => {
   resetCurrentFrame();
 };
 
-const settings = {
-  planets: DEFAULT_PLANETS,
-  eccentricity: DEFAULT_ECCENTRICITY,
-  ellipse_a: DEFAULT_ELLIPSE_A,
-  armor: false,
-  tail: false,
-  checkCollisions: false,
-  topology: DEFAULT_TOPOLOGY,
-  latBands: DEFAULT_LAT_BANDS,
-  longBands: DEFAULT_LONG_BANDS,
-};
-const setupUI = () => {
-  const gui = new GUI();
-  gui
-    .add(settings, "planets", MIN_PLANETS, MAX_PLANETS)
-    .step(PLANETS_STEP)
-    .onChange((numOfPlanets) => {
-      createPlanets(numOfPlanets);
-      if (settings.tail) {
+const uiCallback = (type: SettingsType, value?: unknown) => {
+  switch (type) {
+    case "planets": {
+      createPlanets(value as number);
+      if (uiSettings.tail) {
         resetTailVariables();
         updateVariableTailBuffers();
       }
       resetCurrentFrame();
-    });
-  gui
-    .add(settings, "eccentricity", MIN_ECCENTRICITY, MAX_ECCENTRICITY)
-    .step(ECCENTRICITY_STEP)
-    .onChange(commonSettingsOnChange);
-  gui
-    .add(settings, "ellipse_a", MIN_ELLIPSE_A, MAX_ELLIPSE_A)
-    .step(ELLIPSE_A_STEP)
-    .onChange(commonSettingsOnChange);
-  gui.add(settings, "armor").onChange(commonSettingsOnChange);
-  gui.add(settings, "tail").onChange((tail: boolean) => {
-    if (!tail) {
-      resetTailVariables();
-    } else {
-      updateVariableTailBuffers();
+      break;
     }
+    case "eccentricity": {
+      commonSettingsOnChange();
+      break;
+    }
+    case "ellipse_a": {
+      commonSettingsOnChange();
+      break;
+    }
+    case "armor": {
+      commonSettingsOnChange();
+      break;
+    }
+    case "tail": {
+      if (!value) {
+        resetTailVariables();
+      } else {
+        updateVariableTailBuffers();
+      }
 
-    resetCurrentFrame();
-  });
-  gui.add(settings, "checkCollisions").onChange(commonSettingsOnChange);
-  gui.add(settings, "topology", TOPOLOGIES).onChange(commonSettingsOnChange);
-  gui.add(settings, "latBands", MIN_LAT_BANDS, MAX_LAT_BANDS).onChange(() => {
-    createPlanets(settings.planets);
-    commonSettingsOnChange;
-  });
-  gui
-    .add(settings, "longBands", MIN_LONG_BANDS, MAX_LONG_BANDS)
-    .onChange(() => {
-      createPlanets(settings.planets);
-      commonSettingsOnChange;
-    });
+      resetCurrentFrame();
+      break;
+    }
+    case "checkCollisions": {
+      commonSettingsOnChange();
+      break;
+    }
+    case "topology": {
+      commonSettingsOnChange();
+      break;
+    }
+    case "latBands": {
+      createPlanets(uiSettings.planets);
+      commonSettingsOnChange();
+      break;
+    }
+    case "longBands": {
+      createPlanets(uiSettings.planets);
+      commonSettingsOnChange();
+      break;
+    }
+  }
 };
-setupUI();
+setupUI({ callback: uiCallback });
 
 /// Pointer events
 const pointerEvents: PointerEventsTransformations = {
@@ -424,8 +402,8 @@ const createPlanetAndItsBuffers = ({
 }): PlanetInfo => {
   const { positionAndTexCoords, indices } = createSphereMesh({
     radius,
-    latBands: settings.latBands,
-    longBands: settings.longBands,
+    latBands: uiSettings.latBands,
+    longBands: uiSettings.longBands,
   });
 
   // Create Position and TexCoords Buffer (VERTEX BUFFER)
@@ -459,7 +437,7 @@ const createPlanetAndItsBuffers = ({
 // Fill in all uniform MVP matrices beforehand so you don't have to
 // `device.queue.writeBuffer` (or direct mapping) for each one of the planets.
 let allModelMatrices = new Float32Array(
-  (modelMatrixUniformBufferSize * settings.planets) /
+  (modelMatrixUniformBufferSize * uiSettings.planets) /
     Float32Array.BYTES_PER_ELEMENT,
 );
 
@@ -468,19 +446,19 @@ const setModelMatrixUniformBuffer = (): GPUBuffer => {
   const rotation = new Date().getTime() * ROTATION_SPEED_SENSITIVITY;
 
   allModelMatrices = new Float32Array(
-    (modelMatrixUniformBufferSize * settings.planets) /
+    (modelMatrixUniformBufferSize * uiSettings.planets) /
       Float32Array.BYTES_PER_ELEMENT,
   );
 
   let previousTranslation: vec3 = [0, 0, 0];
-  for (let i = 0; i < settings.planets; i++) {
+  for (let i = 0; i < uiSettings.planets; i++) {
     const angle = ((lastAngleForPlanet[i] ?? 0) + 1) % FULL_CIRCUMFERENCE;
     lastAngleForPlanet[i] = angle;
 
     const { x, y, z } = calculateXYZEllipseCoordinates({
       degreeAngle: angle,
-      ellipse_a: settings.ellipse_a,
-      ellipse_eccentricity: settings.eccentricity,
+      ellipse_a: uiSettings.ellipse_a,
+      ellipse_eccentricity: uiSettings.eccentricity,
     });
 
     previousTranslation = vec3.add(emptyVector, previousTranslation, [x, y, z]);
@@ -512,7 +490,7 @@ const setModelMatrixUniformBuffer = (): GPUBuffer => {
   // Add those matrices to the uniform buffer
   const modelMatrixUniformBuffer = device.createBuffer({
     label: "model matrix uniform coordinates buffer",
-    size: modelMatrixUniformBufferSize * settings.planets,
+    size: modelMatrixUniformBufferSize * uiSettings.planets,
     usage: GPUBufferUsage.UNIFORM,
     mappedAtCreation: true,
   });
@@ -534,7 +512,7 @@ const createPlanets = (numberOfPlanets: number) => {
   planetsBuffers = [];
   for (let i = 0; i < numberOfPlanets; i++) {
     // TODO: improve this. It is commented out because of
-    // the change in the latBands and lonBands settings
+    // the change in the latBands and lonBands uiSettings
     // if (i < planetsBuffers.length - 1) {
     //   continue;
     // }
@@ -559,7 +537,7 @@ const createPlanets = (numberOfPlanets: number) => {
     });
   }
 };
-createPlanets(settings.planets);
+createPlanets(uiSettings.planets);
 
 type PlanetCenterPointAndRadius = {
   x: number;
@@ -574,7 +552,7 @@ const getPlanetsCenterPointAndRadius =
     const planetsCenterPointAndRadius: Array<PlanetCenterPointAndRadius> = [];
 
     // Get all current center point (in world space, after model matrix is applied) of each planet, along with its radius
-    for (let i = 0; i < settings.planets; i++) {
+    for (let i = 0; i < uiSettings.planets; i++) {
       const dynamicOffset = i * modelMatrixUniformBufferSize;
 
       const { radius } = planetsBuffers[i];
@@ -620,9 +598,9 @@ export const getPipelineBasedOnCurrentTopology = (
 
 const renderPlanets = async () => {
   const modelMatrixUniformBuffer = setModelMatrixUniformBuffer();
-  const pipeline = getPipelineBasedOnCurrentTopology(settings.topology);
+  const pipeline = getPipelineBasedOnCurrentTopology(uiSettings.topology);
 
-  for (let i = 0; i < settings.planets; i++) {
+  for (let i = 0; i < uiSettings.planets; i++) {
     const dynamicOffset = i * modelMatrixUniformBufferSize;
 
     const { vertexBuffer, indexBuffer, indices, texture } = planetsBuffers[i];
@@ -656,7 +634,7 @@ const renderPlanets = async () => {
     renderPass.setBindGroup(0, bindGroup, [dynamicOffset]);
     renderPass.drawIndexed(indices.length);
 
-    if (settings.armor) {
+    if (uiSettings.armor) {
       renderPass.setPipeline(armorPipeline);
       renderPass.drawIndexed(indices.length);
     }
@@ -675,7 +653,7 @@ const updateVariableTailBuffers = () => {
   // Order the tailCenterPosition vector to have all
   // planets coordinates ordered
   tailCenterPositions = [];
-  for (let i = 0; i < settings.planets; i++) {
+  for (let i = 0; i < uiSettings.planets; i++) {
     const coordinatesOfPlanetCenterPoint = tailCenterPositionsComplete
       .filter((item) => item.planetIdx === i)
       .map((item) => vec3.fromValues(item.x, item.y, item.z));
@@ -738,7 +716,7 @@ const renderTail = () => {
   renderPass.setVertexBuffer(0, tailVertexBuffer);
   renderPass.setBindGroup(0, tailBindGroup);
   renderPass.draw(
-    tailCenterPositions.slice(0, coordinatesPerPlanet * settings.planets)
+    tailCenterPositions.slice(0, coordinatesPerPlanet * uiSettings.planets)
       .length,
   );
 };
@@ -930,7 +908,7 @@ const checkCollisionViaComputeShader = async ({
 
 /// Variables to check for conditional rendering
 // INFO: this is different because the compute shader does not run on every frame
-let currentPlanetsForComputeShader = settings.planets;
+let currentPlanetsForComputeShader = uiSettings.planets;
 // INFO: this variavble does not update automatically when rotation angles change
 let currentCameraConfigurations: PointerEventsTransformations = {
   ...pointerEvents,
@@ -964,26 +942,26 @@ function frame() {
   renderPlanets();
 
   // Render the tail (if setting is activated)
-  if (settings.tail) {
+  if (uiSettings.tail) {
     renderTail();
   }
 
   // Create the compute shader buffers as soon as we start the
   // application and after we rendered planets
-  if (currentFrame === 0 && settings.checkCollisions) {
-    recreateComputeShaderBuffers(settings.planets);
+  if (currentFrame === 0 && uiSettings.checkCollisions) {
+    recreateComputeShaderBuffers(uiSettings.planets);
   }
 
   // Only check for collisions every so often
   if (
     currentFrame % CHECK_COLLISION_FREQUENCY === 0 &&
-    settings.checkCollisions
+    uiSettings.checkCollisions
   ) {
     checkCollisionViaComputeShader({
-      numberOfPlanets: settings.planets,
-      recreateBuffers: currentPlanetsForComputeShader !== settings.planets,
+      numberOfPlanets: uiSettings.planets,
+      recreateBuffers: currentPlanetsForComputeShader !== uiSettings.planets,
     });
-    currentPlanetsForComputeShader = settings.planets;
+    currentPlanetsForComputeShader = uiSettings.planets;
   }
   currentFrame++;
 
