@@ -384,7 +384,7 @@ const calculateAndSetViewProjectionMatrix = ({
     usage: GPUBufferUsage.UNIFORM,
     mappedAtCreation: true,
   });
-  const cameraEye: vec3 = [0, 0, scale];
+  const cameraEye: vec3 = [-offsetX, offsetY, scale];
   const cameraLookupCenter: vec3 = [-offsetX, offsetY, 0];
   const viewProjectionMatrix = getViewProjectionMatrix({
     cameraRotationX: -rotationAngleY,
@@ -855,7 +855,8 @@ interface CollisionPair {
   b: number;
 }
 
-const parseResultsBuffer = (arrayBuffer: ArrayBuffer, label: string) => {
+/// Parse collison results buffer
+const parseResultsBuffer = (arrayBuffer: ArrayBuffer) => {
   const view = new DataView(arrayBuffer.slice(4)); // remove `count`
   const structSize = 2 * 4; // CollisionPair (a: number, b: number)
 
@@ -874,7 +875,7 @@ const parseResultsBuffer = (arrayBuffer: ArrayBuffer, label: string) => {
     }
   }
 
-  console.log(label, collisions);
+  console.info("Collisions: ", collisions);
 };
 
 const checkCollisionViaComputeShader = async ({
@@ -884,7 +885,7 @@ const checkCollisionViaComputeShader = async ({
   numberOfPlanets: number;
   recreateBuffers: boolean;
 }) => {
-  console.log("Checking collisions...");
+  console.info("Checking collisions...");
 
   if (recreateBuffers) {
     recreateComputeShaderBuffers(numberOfPlanets);
@@ -921,7 +922,7 @@ const checkCollisionViaComputeShader = async ({
   const arrayBuffer = resultsBuffer.getMappedRange();
 
   // Parse the buffer into a structure
-  parseResultsBuffer(arrayBuffer, "collisions");
+  parseResultsBuffer(arrayBuffer);
 
   // release buffer
   resultsBuffer.unmap();

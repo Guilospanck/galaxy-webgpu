@@ -6,8 +6,8 @@ export const DEGREE_TO_RAD = 0.0174532925; // 1 deg = 0.0174532925 rad
 export const FULL_CIRCUMFERENCE = 360; // 360 degrees
 export const CHECK_COLLISION_FREQUENCY = 1097; // Check for collisions every currentFrame % 1097 === 0
 export const RENDER_TAIL_FREQUENCY = 100;
-export const ROTATION_SPEED_SENSITIVITY = 0.0001;
-export const TRANSLATION_SPEED_SENSITIVITY = 0.0001;
+export const ROTATION_SPEED_SENSITIVITY = 0.00001;
+export const TRANSLATION_SPEED_SENSITIVITY = 0.00001;
 
 export enum TopologyEnum {
   POINT_LIST = "point-list",
@@ -51,3 +51,8 @@ export const DEFAULT_LONG_BANDS = 40;
 export const LONG_BANDS_STEP = 1;
 export const MIN_LONG_BANDS = 2;
 export const MAX_LONG_BANDS = 100;
+
+/// Pointer events
+export const ZOOM_FACTOR_SENSITIVITY = 1.05;
+export const PAN_SENSITIVITY = 0.01;
+export const ROTATION_SENSITIVITY = 0.01;

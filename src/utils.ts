@@ -3,7 +3,9 @@ import {
   DEGREE_TO_RAD,
   FAR_FRUSTUM,
   NEAR_FRUSTUM,
-  TopologyEnum,
+  PAN_SENSITIVITY,
+  ROTATION_SENSITIVITY,
+  ZOOM_FACTOR_SENSITIVITY,
 } from "./constants";
 
 /// Yoinked from https://toji.dev/webgpu-best-practices/img-textures
@@ -221,12 +223,12 @@ export const setupPointerEvents = (input: PointerEventsInput): void => {
 
     if (event.shiftKey) {
       // Rotate if Shift key is pressed
-      rotationAngleX += deltaX * 0.01; // Adjust sensitivity
-      rotationAngleY += deltaY * 0.01; // Adjust sensitivity
+      rotationAngleX += deltaX * ROTATION_SENSITIVITY; // Adjust sensitivity
+      rotationAngleY += deltaY * ROTATION_SENSITIVITY; // Adjust sensitivity
     } else {
       // Pan otherwise
-      offsetX += deltaX * 0.1;
-      offsetY += deltaY * 0.1;
+      offsetX += deltaX * PAN_SENSITIVITY;
+      offsetY += deltaY * PAN_SENSITIVITY;
     }
 
     lastPointerX = event.clientX;
@@ -250,11 +252,10 @@ export const setupPointerEvents = (input: PointerEventsInput): void => {
   canvas.addEventListener("wheel", (event) => {
     event.preventDefault();
 
-    const zoomFactor = 1.01; // Adjust sensitivity
     if (event.deltaY < 0) {
-      scale *= zoomFactor; // Zoom in
+      scale *= ZOOM_FACTOR_SENSITIVITY; // Zoom in
     } else {
-      scale /= zoomFactor; // Zoom out
+      scale /= ZOOM_FACTOR_SENSITIVITY; // Zoom out
     }
 
     callback({ rotationAngleX, rotationAngleY, scale, offsetX, offsetY });

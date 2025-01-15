@@ -49,8 +49,10 @@ primitive: { topology: "triangle-list" }, // Change this to `point-list` to have
 
 ## (Done) Parametrise the lat and long bands
 
-## Check camera movement
+## (Done) Check camera movement
 
 Not sure it is working properly.
+
+## Add some collision effect
 
 ## Add resize observer to the canvas
