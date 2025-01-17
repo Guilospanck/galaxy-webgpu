@@ -55,4 +55,6 @@ Not sure it is working properly.
 
 ## Add some collision effect
 
+## Refactor and improve code
+
 ## Add resize observer to the canvas

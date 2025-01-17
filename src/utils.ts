@@ -1,12 +1,14 @@
-import { mat4, vec3 } from "gl-matrix";
+import { mat4, vec3, vec4 } from "gl-matrix";
 import {
   DEGREE_TO_RAD,
   FAR_FRUSTUM,
+  MAT4X4_BYTE_LENGTH,
   NEAR_FRUSTUM,
   PAN_SENSITIVITY,
   ROTATION_SENSITIVITY,
   ZOOM_FACTOR_SENSITIVITY,
 } from "./constants";
+import { PlanetCenterPointRadiusAndIndex, PlanetInfo } from "./types";
 
 /// Yoinked from https://toji.dev/webgpu-best-practices/img-textures
 const webGPUTextureFromImageBitmapOrCanvas = (
@@ -442,3 +444,48 @@ export const hasCameraChangedPositions = (
 //   }
 //   return result;
 // };
+//
+
+const PLANET_INITIAL_CENTER: vec4 = [0, 0, 0, 1];
+export const getPlanetsCenterPointAndRadius = ({
+  numberOfPlanets,
+  planetsBuffers,
+  modelMatrixUniformBufferSize,
+  allModelMatrices,
+}: {
+  numberOfPlanets: number;
+  planetsBuffers: PlanetInfo[];
+  modelMatrixUniformBufferSize: number;
+  allModelMatrices: Float32Array;
+}): Array<PlanetCenterPointRadiusAndIndex> => {
+  const planetsCenterPointAndRadius: Array<PlanetCenterPointRadiusAndIndex> =
+    [];
+
+  // Get all current center point (in world space, after model matrix is applied) of each planet, along with its radius
+  for (let i = 0; i < numberOfPlanets; i++) {
+    const dynamicOffset = i * modelMatrixUniformBufferSize;
+
+    const { radius } = planetsBuffers[i];
+
+    let modelMatrix = allModelMatrices.subarray(
+      dynamicOffset / 4,
+      dynamicOffset / 4 + MAT4X4_BYTE_LENGTH,
+    );
+
+    let planetCenterPositionOnScreen: vec4 = vec4.transformMat4(
+      vec4.create(),
+      PLANET_INITIAL_CENTER,
+      modelMatrix,
+    );
+
+    planetsCenterPointAndRadius.push({
+      x: planetCenterPositionOnScreen[0],
+      y: planetCenterPositionOnScreen[1],
+      z: planetCenterPositionOnScreen[2],
+      radius,
+      planetIdx: i,
+    });
+  }
+
+  return planetsCenterPointAndRadius;
+};
