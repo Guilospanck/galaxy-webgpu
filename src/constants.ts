@@ -1,3 +1,5 @@
+import { vec3 } from "gl-matrix";
+
 export const MAT4X4_BYTE_LENGTH = 4 * 4 * Float32Array.BYTES_PER_ELEMENT;
 export const NEAR_FRUSTUM = 0.1;
 export const FAR_FRUSTUM = 100000;
@@ -56,3 +58,6 @@ export const MAX_LONG_BANDS = 100;
 export const ZOOM_FACTOR_SENSITIVITY = 1.05;
 export const PAN_SENSITIVITY = 0.7;
 export const ROTATION_SENSITIVITY = 0.01;
+
+export const EMPTY_VECTOR: vec3 = [0, 0, 0];
+export const CAMERA_UP: vec3 = [0, 1, 0];

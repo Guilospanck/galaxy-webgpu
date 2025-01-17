@@ -123,7 +123,11 @@ export const Collisions = ({
   };
 
   /// Parse collison results buffer
-  const parseResultsBuffer = (arrayBuffer: ArrayBuffer) => {
+  const parseResultsBuffer = ({
+    arrayBuffer,
+  }: {
+    arrayBuffer: ArrayBuffer;
+  }) => {
     const view = new DataView(arrayBuffer.slice(4)); // remove `count`
     const structSize = 2 * 4; // CollisionPair (a: number, b: number)
 
@@ -143,7 +147,7 @@ export const Collisions = ({
     }
 
     console.info("Collisions: ", collisions);
-    // TODO: if collision, then explode something
+    // TODO: create a planet (not render)
   };
 
   const checkCollisionViaComputeShader = async ({
@@ -195,7 +199,9 @@ export const Collisions = ({
     const arrayBuffer = resultsBuffer.getMappedRange();
 
     // Parse the buffer into a structure
-    parseResultsBuffer(arrayBuffer);
+    parseResultsBuffer({
+      arrayBuffer,
+    });
 
     // release buffer
     resultsBuffer.unmap();

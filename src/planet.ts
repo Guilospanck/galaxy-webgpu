@@ -1,25 +1,19 @@
 import {
+  CAMERA_UP,
   CHECK_COLLISION_FREQUENCY,
-  FULL_CIRCUMFERENCE,
   MAT4X4_BYTE_LENGTH,
-  ROTATION_SPEED_SENSITIVITY,
-  TopologyEnum,
-  TRANSLATION_SPEED_SENSITIVITY,
 } from "./constants";
 import {
-  calculateXYZEllipseCoordinates,
   createSphereMesh,
-  getModelMatrix,
   getPlanetsCenterPointAndRadius,
   getViewProjectionMatrix,
   hasCameraChangedPositions,
   PointerEventsCallbackData,
   PointerEventsTransformations,
-  roundUp,
   setupPointerEvents,
 } from "./utils";
 import { initWebGPUAndCanvas } from "./webgpu";
-import { mat4, vec3, vec4 } from "gl-matrix";
+import { vec3, vec4 } from "gl-matrix";
 import { PlanetTextures } from "./textures";
 import planetWGSL from "./shaders/planet.wgsl?raw";
 import Stats from "stats.js";
@@ -27,6 +21,7 @@ import { SettingsType, setupUI, uiSettings } from "./ui";
 import { PlanetInfo } from "./types";
 import { Collisions } from "./collision";
 import { Tail } from "./tail";
+import { Render } from "./render";
 
 const stats = new Stats();
 
@@ -38,88 +33,6 @@ document.body.appendChild(stats.dom);
 const { canvas, context, device, format } = await initWebGPUAndCanvas();
 
 const perspectiveAspectRatio = canvas.width / canvas.height;
-const emptyVector: vec3 = [0, 0, 0];
-const cameraUp: vec3 = [0, 1, 0];
-
-let currentFrame = 0;
-
-/// UI Settings
-// Every time the GUI changes, we want to reset the currentFrame count
-// It is as if the frame had just began.
-const resetCurrentFrame = () => {
-  currentFrame = 0;
-};
-const resetTailVariables = () => {
-  resetTailCenterPositionsComplete();
-  resetCoordinatesPerPlanet();
-};
-const commonSettingsOnChange = () => {
-  resetCurrentFrame();
-};
-const uiCallback = (type: SettingsType, value?: unknown) => {
-  switch (type) {
-    case "planets": {
-      createPlanets(value as number);
-      if (uiSettings.tail) {
-        resetTailVariables();
-        updateVariableTailBuffers({
-          numberOfPlanets: value as number,
-          planetsBuffers,
-          modelMatrixUniformBufferSize,
-          allModelMatrices,
-        });
-      }
-      resetCurrentFrame();
-      break;
-    }
-    case "eccentricity": {
-      commonSettingsOnChange();
-      break;
-    }
-    case "ellipse_a": {
-      commonSettingsOnChange();
-      break;
-    }
-    case "armor": {
-      commonSettingsOnChange();
-      break;
-    }
-    case "tail": {
-      if (!value) {
-        resetTailVariables();
-      } else {
-        updateVariableTailBuffers({
-          numberOfPlanets: value as number,
-          planetsBuffers,
-          modelMatrixUniformBufferSize,
-          allModelMatrices,
-        });
-      }
-
-      resetCurrentFrame();
-      break;
-    }
-    case "checkCollisions": {
-      commonSettingsOnChange();
-      break;
-    }
-    case "topology": {
-      commonSettingsOnChange();
-      break;
-    }
-    case "latBands": {
-      createPlanets(uiSettings.planets);
-      commonSettingsOnChange();
-      break;
-    }
-    case "longBands": {
-      createPlanets(uiSettings.planets);
-      commonSettingsOnChange();
-      break;
-    }
-  }
-};
-setupUI({ callback: uiCallback });
 
 /// Pointer events
 const pointerEvents: PointerEventsTransformations = {
@@ -151,12 +64,6 @@ console.assert(shaderModule !== null, "Failed to compile shader code");
 // INFO: we are using an async constructor
 const textures = await new PlanetTextures(device);
 
-const sampler = device.createSampler({
-  label: "sampler element",
-  magFilter: "linear",
-  minFilter: "linear",
-});
-
 // Depth Buffer
 const depthTexture = device.createTexture({
   label: "depth texture",
@@ -164,150 +71,6 @@ const depthTexture = device.createTexture({
   format: "depth24plus",
   usage: GPUTextureUsage.RENDER_ATTACHMENT,
 });
-
-// Custom bind group that sets model matrix uniform buffer with a dynamic offset
-const bindGroupLayout = device.createBindGroupLayout({
-  label: "custom bind group layout",
-  entries: [
-    {
-      binding: 0, // View-Projection matrix buffer
-      visibility: GPUShaderStage.VERTEX,
-      buffer: {
-        type: "uniform",
-      },
-    },
-    {
-      binding: 1, // Model matrix buffer
-      visibility: GPUShaderStage.VERTEX,
-      buffer: {
-        type: "uniform",
-        hasDynamicOffset: true, // Enable dynamic offsets
-      },
-    },
-    {
-      binding: 2, // Sampler
-      visibility: GPUShaderStage.FRAGMENT,
-      sampler: {},
-    },
-    {
-      binding: 3, // Texture
-      visibility: GPUShaderStage.FRAGMENT,
-      texture: {},
-    },
-  ],
-});
-
-const baseRenderPipeline: GPURenderPipelineDescriptor = {
-  label: "render pipeline",
-  layout: device.createPipelineLayout({
-    bindGroupLayouts: [bindGroupLayout],
-  }),
-  vertex: {
-    module: shaderModule,
-    entryPoint: "main",
-    buffers: [
-      {
-        arrayStride: 5 * Float32Array.BYTES_PER_ELEMENT, // 3 position + 2 texCoord
-        attributes: [
-          // position
-          {
-            shaderLocation: 0,
-            format: "float32x3",
-            offset: 0,
-          },
-          // texCoord
-          {
-            shaderLocation: 1,
-            format: "float32x2",
-            offset: 3 * Float32Array.BYTES_PER_ELEMENT,
-          },
-        ],
-      },
-    ],
-  },
-  fragment: {
-    module: shaderModule,
-    entryPoint: "main_fragment",
-    targets: [{ format }],
-  },
-  depthStencil: {
-    format: "depth24plus",
-    depthWriteEnabled: true,
-    depthCompare: "less",
-  },
-};
-
-// Pipelines based on topology
-const triangleListRenderPipeline = device.createRenderPipeline({
-  ...baseRenderPipeline,
-  primitive: { topology: TopologyEnum.TRIANGLE_LIST }, // Change this to `point-list` to have a "see-through"
-});
-const pointListRenderPipeline = device.createRenderPipeline({
-  ...baseRenderPipeline,
-  primitive: { topology: TopologyEnum.POINT_LIST }, // Change this to `point-list` to have a "see-through"
-});
-const lineListRenderPipeline = device.createRenderPipeline({
-  ...baseRenderPipeline,
-  primitive: { topology: TopologyEnum.LINE_LIST }, // Change this to `point-list` to have a "see-through"
-});
-
-// Armor pipeline
-const armorPipeline = device.createRenderPipeline({
-  label: "armor render pipeline",
-  layout: device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
-  vertex: {
-    module: shaderModule,
-    entryPoint: "main",
-    buffers: [
-      {
-        arrayStride: 5 * Float32Array.BYTES_PER_ELEMENT, // 3 position + 2 texCoord
-        attributes: [
-          // position
-          {
-            shaderLocation: 0,
-            format: "float32x3",
-            offset: 0,
-          },
-          // texCoord
-          {
-            shaderLocation: 1,
-            format: "float32x2",
-            offset: 3 * Float32Array.BYTES_PER_ELEMENT,
-          },
-        ],
-      },
-    ],
-  },
-  fragment: {
-    module: shaderModule,
-    entryPoint: "armor_fragment",
-    targets: [{ format }],
-  },
-  primitive: { topology: "point-list" },
-  depthStencil: {
-    format: "depth24plus",
-    depthWriteEnabled: true,
-    depthCompare: "less",
-  },
-});
-
-const passDescriptor: GPURenderPassDescriptor = {
-  label: "pass descriptor element",
-  colorAttachments: [
-    {
-      view: undefined, // assigned later
-      clearValue: { r: 0, g: 0, b: 0, a: 1 },
-      loadOp: "clear",
-      storeOp: "store",
-    },
-  ],
-  depthStencilAttachment: {
-    view: depthTexture.createView(),
-    depthLoadOp: "clear",
-    depthStoreOp: "store",
-    depthClearValue: 1.0,
-  },
-};
 
 let viewProjectionMatrixUniformBuffer: GPUBuffer;
 const calculateAndSetViewProjectionMatrix = ({
@@ -331,7 +94,7 @@ const calculateAndSetViewProjectionMatrix = ({
     cameraRotationZ: rotationAngleX,
     cameraEye,
     cameraLookupCenter,
-    cameraUp,
+    cameraUp: CAMERA_UP,
     perspectiveAspectRatio,
   });
 
@@ -341,13 +104,6 @@ const calculateAndSetViewProjectionMatrix = ({
   viewProjectionMatrixUniformBuffer.unmap();
 };
 calculateAndSetViewProjectionMatrix(pointerEvents);
-
-// Model Matrix Uniform Buffer
-let modelMatrixUniformBufferSize = MAT4X4_BYTE_LENGTH; // for each planet, we have only a MVP matrix (mat4)
-modelMatrixUniformBufferSize = roundUp(
-  modelMatrixUniformBufferSize,
-  device.limits.minUniformBufferOffsetAlignment,
-); // uniform buffer needs to be aligned correctly (it works without it if you don't use dynamic offsets)
 
 const createPlanetAndItsBuffers = ({
   radius = 1,
@@ -388,74 +144,6 @@ const createPlanetAndItsBuffers = ({
   };
 };
 
-// Fill in all uniform MVP matrices beforehand so you don't have to
-// `device.queue.writeBuffer` (or direct mapping) for each one of the planets.
-let allModelMatrices = new Float32Array(
-  (modelMatrixUniformBufferSize * uiSettings.planets) /
-    Float32Array.BYTES_PER_ELEMENT,
-);
-
-const lastAngleForPlanet: Record<number, number> = {};
-const setModelMatrixUniformBuffer = (): GPUBuffer => {
-  const rotation = new Date().getTime() * ROTATION_SPEED_SENSITIVITY;
-
-  allModelMatrices = new Float32Array(
-    (modelMatrixUniformBufferSize * uiSettings.planets) /
-      Float32Array.BYTES_PER_ELEMENT,
-  );
-
-  let previousTranslation: vec3 = [0, 0, 0];
-  for (let i = 0; i < uiSettings.planets; i++) {
-    const angle = ((lastAngleForPlanet[i] ?? 0) + 1) % FULL_CIRCUMFERENCE;
-    lastAngleForPlanet[i] = angle;
-
-    const { x, y, z } = calculateXYZEllipseCoordinates({
-      degreeAngle: angle,
-      ellipse_a: uiSettings.ellipse_a,
-      ellipse_eccentricity: uiSettings.eccentricity,
-    });
-
-    previousTranslation = vec3.add(emptyVector, previousTranslation, [x, y, z]);
-
-    const translation =
-      new Date().getTime() * TRANSLATION_SPEED_SENSITIVITY + i;
-
-    // Matrix responsible for the planet movement of translation
-    const translationMatrix = mat4.rotateZ(
-      mat4.create(),
-      mat4.create(),
-      translation,
-    );
-    let modelMatrix = getModelMatrix({
-      modelTranslation: previousTranslation,
-      modelRotationZ: rotation,
-    });
-
-    modelMatrix = new Float32Array(
-      mat4.multiply(mat4.create(), translationMatrix, modelMatrix),
-    );
-
-    allModelMatrices.set(
-      modelMatrix,
-      i * (modelMatrixUniformBufferSize / Float32Array.BYTES_PER_ELEMENT),
-    );
-  }
-
-  // Add those matrices to the uniform buffer
-  const modelMatrixUniformBuffer = device.createBuffer({
-    label: "model matrix uniform coordinates buffer",
-    size: modelMatrixUniformBufferSize * uiSettings.planets,
-    usage: GPUBufferUsage.UNIFORM,
-    mappedAtCreation: true,
-  });
-  new Float32Array(modelMatrixUniformBuffer.getMappedRange()).set(
-    allModelMatrices,
-  );
-  modelMatrixUniformBuffer.unmap();
-
-  return modelMatrixUniformBuffer;
-};
-
 /// INFO: One point about this: it is saving the planets' state in memory (planetsBuffer array)
 /// Therefore in the case that we select to render less planets than we currently have,
 /// it will still keep those states in memory.
@@ -493,67 +181,6 @@ const createPlanets = (numberOfPlanets: number) => {
 };
 createPlanets(uiSettings.planets);
 
-export const getPipelineBasedOnCurrentTopology = (
-  topology: TopologyEnum,
-): GPURenderPipeline => {
-  switch (topology) {
-    case TopologyEnum.LINE_LIST: {
-      return lineListRenderPipeline;
-    }
-    case TopologyEnum.TRIANGLE_LIST: {
-      return triangleListRenderPipeline;
-    }
-    case TopologyEnum.POINT_LIST: {
-      return pointListRenderPipeline;
-    }
-  }
-};
-
-const renderPlanets = async () => {
-  const modelMatrixUniformBuffer = setModelMatrixUniformBuffer();
-  const pipeline = getPipelineBasedOnCurrentTopology(uiSettings.topology);
-
-  for (let i = 0; i < uiSettings.planets; i++) {
-    const dynamicOffset = i * modelMatrixUniformBufferSize;
-
-    const { vertexBuffer, indexBuffer, indices, texture } = planetsBuffers[i];
-
-    // Bind Group
-    const bindGroup = device.createBindGroup({
-      label: "bind group element",
-      layout: pipeline.getBindGroupLayout(0),
-      entries: [
-        {
-          binding: 0,
-          resource: {
-            buffer: viewProjectionMatrixUniformBuffer,
-          },
-        },
-        {
-          binding: 1,
-          resource: {
-            buffer: modelMatrixUniformBuffer,
-            size: modelMatrixUniformBufferSize,
-          },
-        },
-        { binding: 2, resource: sampler },
-        { binding: 3, resource: texture!.createView() },
-      ],
-    });
-
-    renderPass.setPipeline(pipeline);
-    renderPass.setVertexBuffer(0, vertexBuffer); // position and texCoords
-    renderPass.setIndexBuffer(indexBuffer, "uint32");
-    renderPass.setBindGroup(0, bindGroup, [dynamicOffset]);
-    renderPass.drawIndexed(indices.length);
-
-    if (uiSettings.armor) {
-      renderPass.setPipeline(armorPipeline);
-      renderPass.drawIndexed(indices.length);
-    }
-  }
-};
-
 /// Collision computation
 const { checkCollisionViaComputeShader, recreateComputeShaderBuffers } =
   Collisions({ device, shaderModule });
@@ -566,6 +193,10 @@ const {
   updateVariableTailBuffers,
 } = Tail({ device, shaderModule, format });
 
+/// Render the planets
+const { renderPlanets, getModelMatrixUniformBufferSize, getAllModelMatrices } =
+  Render({ device, shaderModule, format });
+
 /// Variables to check for conditional rendering
 // INFO: this is different because the compute shader does not run on every frame
 let currentPlanetsForComputeShader = uiSettings.planets;
@@ -573,6 +204,104 @@ let currentPlanetsForComputeShader = uiSettings.planets;
 let currentCameraConfigurations: PointerEventsTransformations = {
   ...pointerEvents,
 };
+
+const passDescriptor: GPURenderPassDescriptor = {
+  label: "pass descriptor element",
+  colorAttachments: [
+    {
+      view: undefined, // assigned later
+      clearValue: { r: 0, g: 0, b: 0, a: 1 },
+      loadOp: "clear",
+      storeOp: "store",
+    },
+  ],
+  depthStencilAttachment: {
+    view: depthTexture.createView(),
+    depthLoadOp: "clear",
+    depthStoreOp: "store",
+    depthClearValue: 1.0,
+  },
+};
+
+let currentFrame = 0;
+
+/// UI Settings
+// Every time the GUI changes, we want to reset the currentFrame count
+// It is as if the frame had just began.
+const resetCurrentFrame = () => {
+  currentFrame = 0;
+};
+const resetTailVariables = () => {
+  resetTailCenterPositionsComplete();
+  resetCoordinatesPerPlanet();
+};
+const commonSettingsOnChange = () => {
+  resetCurrentFrame();
+};
+const uiCallback = (type: SettingsType, value?: unknown) => {
+  switch (type) {
+    case "planets": {
+      createPlanets(value as number);
+      if (uiSettings.tail) {
+        resetTailVariables();
+        updateVariableTailBuffers({
+          numberOfPlanets: value as number,
+          planetsBuffers,
+          modelMatrixUniformBufferSize: getModelMatrixUniformBufferSize(),
+          allModelMatrices: getAllModelMatrices(),
+        });
+      }
+      resetCurrentFrame();
+      break;
+    }
+    case "eccentricity": {
+      commonSettingsOnChange();
+      break;
+    }
+    case "ellipse_a": {
+      commonSettingsOnChange();
+      break;
+    }
+    case "armor": {
+      commonSettingsOnChange();
+      break;
+    }
+    case "tail": {
+      if (!value) {
+        resetTailVariables();
+      } else {
+        updateVariableTailBuffers({
+          numberOfPlanets: value as number,
+          planetsBuffers,
+          modelMatrixUniformBufferSize: getModelMatrixUniformBufferSize(),
+          allModelMatrices: getAllModelMatrices(),
+        });
+      }
+
+      resetCurrentFrame();
+      break;
+    }
+    case "checkCollisions": {
+      commonSettingsOnChange();
+      break;
+    }
+    case "topology": {
+      commonSettingsOnChange();
+      break;
+    }
+    case "latBands": {
+      createPlanets(uiSettings.planets);
+      commonSettingsOnChange();
+      break;
+    }
+    case "longBands": {
+      createPlanets(uiSettings.planets);
+      commonSettingsOnChange();
+      break;
+    }
+  }
+};
+setupUI({ callback: uiCallback });
 
 // Renders on the same frame must use the same render pass, otherwise
 // it switches (either one or the other, not both)
@@ -600,7 +329,16 @@ function frame() {
   }
 
   // Render the planets
-  renderPlanets();
+  renderPlanets({
+    renderPass,
+    enableArmor: uiSettings.armor,
+    numberOfPlanets: uiSettings.planets,
+    ellipse_a: uiSettings.ellipse_a,
+    eccentricity: uiSettings.eccentricity,
+    topology: uiSettings.topology,
+    viewProjectionMatrixUniformBuffer,
+    planetsBuffers,
+  });
 
   // Render the tail (if setting is activated)
   if (uiSettings.tail) {
@@ -608,8 +346,8 @@ function frame() {
       currentFrame,
       numberOfPlanets: uiSettings.planets,
       planetsBuffers,
-      modelMatrixUniformBufferSize,
-      allModelMatrices,
+      modelMatrixUniformBufferSize: getModelMatrixUniformBufferSize(),
+      allModelMatrices: getAllModelMatrices(),
       viewProjectionMatrixUniformBuffer,
       renderPass,
     });
@@ -623,8 +361,8 @@ function frame() {
     planetsCenterPointsAndRadius = getPlanetsCenterPointAndRadius({
       numberOfPlanets: uiSettings.planets,
       planetsBuffers,
-      modelMatrixUniformBufferSize,
-      allModelMatrices,
+      modelMatrixUniformBufferSize: getModelMatrixUniformBufferSize(),
+      allModelMatrices: getAllModelMatrices(),
     }).map((item) => vec4.fromValues(item.x, item.y, item.z, item.radius));
   }
 
