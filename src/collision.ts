@@ -143,6 +143,7 @@ export const Collisions = ({
     }
 
     console.info("Collisions: ", collisions);
+    // TODO: if collision, then explode something
   };
 
   const checkCollisionViaComputeShader = async ({
