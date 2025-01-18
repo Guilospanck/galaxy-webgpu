@@ -1,15 +1,7 @@
 import { vec4 } from "gl-matrix";
 import { WORKGROUP_SIZE } from "./constants";
-
-let planetsCenterPointAndRadiusBuffer: GPUBuffer;
-let collisionsBuffer: GPUBuffer;
-let resultsBuffer: GPUBuffer;
-let computeShaderBindGroup: GPUBindGroup;
-
-interface CollisionPair {
-  a: number;
-  b: number;
-}
+import { createPlanets } from "./planet";
+import { CollisionPair } from "./types";
 
 export const Collisions = ({
   device,
@@ -18,6 +10,11 @@ export const Collisions = ({
   device: GPUDevice;
   shaderModule: GPUShaderModule;
 }) => {
+  let planetsCenterPointAndRadiusBuffer: GPUBuffer;
+  let collisionsBuffer: GPUBuffer;
+  let resultsBuffer: GPUBuffer;
+  let computeShaderBindGroup: GPUBindGroup;
+
   // Bind Group for the compute shader
   const computeShaderBindGroupLayout = device.createBindGroupLayout({
     label: "compute shader custom bind group layout",
@@ -146,8 +143,14 @@ export const Collisions = ({
       }
     }
 
-    console.info("Collisions: ", collisions);
-    // TODO: create a planet (not render)
+    console.info(`Collisions found: ${collisions.length}`);
+
+    // Create a new planet for each collision found.
+    createPlanets({
+      numberOfPlanets: collisions.length,
+      radius: 3,
+      addNew: true,
+    });
   };
 
   const checkCollisionViaComputeShader = async ({

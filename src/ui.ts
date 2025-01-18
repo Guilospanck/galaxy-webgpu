@@ -52,10 +52,11 @@ export const setupUI = ({
   callback: (type: SettingsType, value?: unknown) => void;
 }) => {
   const gui = new GUI();
-  gui
+  const planetsGUIListener = gui
     .add(uiSettings, "planets", MIN_PLANETS, MAX_PLANETS)
     .step(PLANETS_STEP)
-    .onChange((numOfPlanets) => callback("planets", numOfPlanets));
+    .onChange((numOfPlanets) => callback("planets", numOfPlanets))
+    .listen();
   gui
     .add(uiSettings, "eccentricity", MIN_ECCENTRICITY, MAX_ECCENTRICITY)
     .step(ECCENTRICITY_STEP)
@@ -68,7 +69,9 @@ export const setupUI = ({
   gui
     .add(uiSettings, "tail")
     .onChange((tail: boolean) => callback("tail", tail));
-  gui.add(uiSettings, "checkCollisions").onChange(() => callback("ellipse_a"));
+  gui
+    .add(uiSettings, "checkCollisions")
+    .onChange((check: boolean) => callback("checkCollisions", check));
   gui
     .add(uiSettings, "topology", TOPOLOGIES)
     .onChange(() => callback("topology"));
@@ -78,4 +81,8 @@ export const setupUI = ({
   gui
     .add(uiSettings, "longBands", MIN_LONG_BANDS, MAX_LONG_BANDS)
     .onChange(() => callback("longBands"));
+
+  return {
+    planetsGUIListener,
+  };
 };

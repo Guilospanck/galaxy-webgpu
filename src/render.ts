@@ -18,12 +18,14 @@ export const Render = ({
   format,
   device,
   shaderModule,
+  numberOfPlanets,
 }: {
   format: GPUTextureFormat;
   device: GPUDevice;
   shaderModule: GPUShaderModule;
+  numberOfPlanets: number;
 }) => {
-  let planetsCount = 0;
+  let planetsCount = numberOfPlanets;
 
   const sampler = device.createSampler({
     label: "sampler element",
@@ -46,7 +48,10 @@ export const Render = ({
   );
   const lastAngleForPlanet: Record<number, number> = {};
 
-  const setNumberOfPlanets = (value: number) => (planetsCount = value);
+  const setNumberOfPlanets = (value: number) => {
+    planetsCount = value;
+  };
+  const getNumberOfPlanets = () => planetsCount;
   const getAllModelMatrices = () => allModelMatrices;
   const getModelMatrixUniformBufferSize = () => modelMatrixUniformBufferSize;
 
@@ -125,23 +130,21 @@ export const Render = ({
   });
 
   const setModelMatrixUniformBuffer = ({
-    numberOfPlanets,
     ellipse_a,
     eccentricity,
   }: {
-    numberOfPlanets: number;
     ellipse_a: number;
     eccentricity: number;
   }): GPUBuffer => {
     const rotation = new Date().getTime() * ROTATION_SPEED_SENSITIVITY;
 
     allModelMatrices = new Float32Array(
-      (modelMatrixUniformBufferSize * numberOfPlanets) /
+      (modelMatrixUniformBufferSize * planetsCount) /
         Float32Array.BYTES_PER_ELEMENT,
     );
 
     let previousTranslation: vec3 = [0, 0, 0];
-    for (let i = 0; i < numberOfPlanets; i++) {
+    for (let i = 0; i < planetsCount; i++) {
       const angle = ((lastAngleForPlanet[i] ?? 0) + 1) % FULL_CIRCUMFERENCE;
       lastAngleForPlanet[i] = angle;
 
@@ -184,7 +187,7 @@ export const Render = ({
     // Add those matrices to the uniform buffer
     const modelMatrixUniformBuffer = device.createBuffer({
       label: "model matrix uniform coordinates buffer",
-      size: modelMatrixUniformBufferSize * numberOfPlanets,
+      size: modelMatrixUniformBufferSize * planetsCount,
       usage: GPUBufferUsage.UNIFORM,
       mappedAtCreation: true,
     });
@@ -269,7 +272,6 @@ export const Render = ({
   const renderPlanets = async ({
     renderPass,
     enableArmor,
-    numberOfPlanets,
     ellipse_a,
     eccentricity,
     topology,
@@ -278,23 +280,21 @@ export const Render = ({
   }: {
     enableArmor: boolean;
     renderPass: GPURenderPassEncoder;
-    numberOfPlanets: number;
     ellipse_a: number;
     eccentricity: number;
     topology: TopologyEnum;
     viewProjectionMatrixUniformBuffer: GPUBuffer;
     planetsBuffers: PlanetInfo[];
   }) => {
-    setNumberOfPlanets(numberOfPlanets);
+    setNumberOfPlanets(planetsCount);
 
     const modelMatrixUniformBuffer = setModelMatrixUniformBuffer({
-      numberOfPlanets,
       ellipse_a,
       eccentricity,
     });
     const pipeline = getPipelineBasedOnCurrentTopology(topology);
 
-    for (let i = 0; i < numberOfPlanets; i++) {
+    for (let i = 0; i < planetsCount; i++) {
       const dynamicOffset = i * modelMatrixUniformBufferSize;
 
       const { vertexBuffer, indexBuffer, indices, texture } = planetsBuffers[i];
@@ -337,6 +337,7 @@ export const Render = ({
 
   return {
     setNumberOfPlanets,
+    getNumberOfPlanets,
     renderPlanets,
     getAllModelMatrices,
     getModelMatrixUniformBufferSize,

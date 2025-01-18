@@ -1,7 +1,7 @@
 import { vec3 } from "gl-matrix";
 import { PlanetCenterPointRadiusAndIndex, PlanetInfo } from "./types";
 import { getPlanetsCenterPointAndRadius } from "./utils";
-import { FULL_CIRCUMFERENCE, RENDER_TAIL_FREQUENCY } from "./constants";
+import { RENDER_TAIL_FREQUENCY } from "./constants";
 
 export const Tail = ({
   format,
@@ -116,10 +116,6 @@ export const Tail = ({
     coordinatesPerPlanet++;
   };
 
-  const hasPointsCompletedOneFullCircumference = (currentFrame: number) => {
-    return currentFrame / RENDER_TAIL_FREQUENCY >= FULL_CIRCUMFERENCE;
-  };
-
   const renderTail = ({
     currentFrame,
     numberOfPlanets,
@@ -138,14 +134,11 @@ export const Tail = ({
     renderPass: GPURenderPassEncoder;
   }) => {
     // Only calculate the tail center positions when:
-    // - the points haven't completed a circumference already (
-    // as we don't want to write already written points) AND
     // the current frame is a multiple of the current RENDER_TAIL_FREQUENCY;
     // - OR the array of tailCenterPositions is empty;
 
     if (
-      (currentFrame % RENDER_TAIL_FREQUENCY === 0 &&
-        !hasPointsCompletedOneFullCircumference(currentFrame)) ||
+      currentFrame % RENDER_TAIL_FREQUENCY === 0 ||
       tailCenterPositions.length === 0
     ) {
       updateVariableTailBuffers({

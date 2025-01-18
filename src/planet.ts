@@ -150,8 +150,21 @@ const createPlanetAndItsBuffers = ({
 /// This is a trade-off between saving this states in memory or re-creating them.
 ///
 let planetsBuffers: PlanetInfo[] = [];
-const createPlanets = (numberOfPlanets: number) => {
-  planetsBuffers = [];
+export const createPlanets = ({
+  numberOfPlanets,
+  radius,
+  addNew,
+}: {
+  numberOfPlanets: number;
+  radius?: number;
+  addNew?: boolean;
+}) => {
+  if (addNew) {
+    setNumberOfPlanets(getNumberOfPlanets() + numberOfPlanets);
+    uiSettings.planets = getNumberOfPlanets();
+    planetsGUIListener.updateDisplay();
+  }
+
   for (let i = 0; i < numberOfPlanets; i++) {
     // TODO: improve this. It is commented out because of
     // the change in the latBands and lonBands uiSettings
@@ -159,7 +172,7 @@ const createPlanets = (numberOfPlanets: number) => {
     //   continue;
     // }
 
-    let radius = Math.random() * 2 + 1;
+    radius = radius ?? Math.random() * 2 + 1;
 
     // Create meshes and buffers, randomizing the radius of the planet
     const { vertexBuffer, indexBuffer, indices } = createPlanetAndItsBuffers({
@@ -179,7 +192,7 @@ const createPlanets = (numberOfPlanets: number) => {
     });
   }
 };
-createPlanets(uiSettings.planets);
+createPlanets({ numberOfPlanets: uiSettings.planets });
 
 /// Collision computation
 const { checkCollisionViaComputeShader, recreateComputeShaderBuffers } =
@@ -194,8 +207,18 @@ const {
 } = Tail({ device, shaderModule, format });
 
 /// Render the planets
-const { renderPlanets, getModelMatrixUniformBufferSize, getAllModelMatrices } =
-  Render({ device, shaderModule, format });
+const {
+  renderPlanets,
+  getModelMatrixUniformBufferSize,
+  getAllModelMatrices,
+  setNumberOfPlanets,
+  getNumberOfPlanets,
+} = Render({
+  device,
+  shaderModule,
+  format,
+  numberOfPlanets: uiSettings.planets,
+});
 
 /// Variables to check for conditional rendering
 // INFO: this is different because the compute shader does not run on every frame
@@ -223,25 +246,35 @@ const passDescriptor: GPURenderPassDescriptor = {
   },
 };
 
-let currentFrame = 0;
+let currentFrame = 1;
 
-/// UI Settings
-// Every time the GUI changes, we want to reset the currentFrame count
-// It is as if the frame had just began.
-const resetCurrentFrame = () => {
-  currentFrame = 0;
-};
 const resetTailVariables = () => {
   resetTailCenterPositionsComplete();
   resetCoordinatesPerPlanet();
 };
-const commonSettingsOnChange = () => {
-  resetCurrentFrame();
+const updatePlanetsForComputeShaderCollision = () => {
+  if (!uiSettings.checkCollisions) {
+    return;
+  }
+
+  planetsCenterPointsAndRadius = getPlanetsCenterPointAndRadius({
+    numberOfPlanets: getNumberOfPlanets(),
+    planetsBuffers,
+    modelMatrixUniformBufferSize: getModelMatrixUniformBufferSize(),
+    allModelMatrices: getAllModelMatrices(),
+  }).map((item) => vec4.fromValues(item.x, item.y, item.z, item.radius));
+
+  recreateComputeShaderBuffers({
+    numberOfPlanets: getNumberOfPlanets(),
+    planetsCenterPointsAndRadius,
+  });
 };
 const uiCallback = (type: SettingsType, value?: unknown) => {
   switch (type) {
     case "planets": {
-      createPlanets(value as number);
+      setNumberOfPlanets(value as number);
+      createPlanets({ numberOfPlanets: value as number });
+
       if (uiSettings.tail) {
         resetTailVariables();
         updateVariableTailBuffers({
@@ -251,19 +284,17 @@ const uiCallback = (type: SettingsType, value?: unknown) => {
           allModelMatrices: getAllModelMatrices(),
         });
       }
-      resetCurrentFrame();
       break;
     }
     case "eccentricity": {
-      commonSettingsOnChange();
+      updatePlanetsForComputeShaderCollision();
       break;
     }
     case "ellipse_a": {
-      commonSettingsOnChange();
+      updatePlanetsForComputeShaderCollision();
       break;
     }
     case "armor": {
-      commonSettingsOnChange();
       break;
     }
     case "tail": {
@@ -278,30 +309,32 @@ const uiCallback = (type: SettingsType, value?: unknown) => {
         });
       }
 
-      resetCurrentFrame();
       break;
     }
     case "checkCollisions": {
-      commonSettingsOnChange();
+      updatePlanetsForComputeShaderCollision();
       break;
     }
     case "topology": {
-      commonSettingsOnChange();
+      updatePlanetsForComputeShaderCollision();
       break;
     }
     case "latBands": {
-      createPlanets(uiSettings.planets);
-      commonSettingsOnChange();
+      createPlanets({ numberOfPlanets: getNumberOfPlanets() });
+      updatePlanetsForComputeShaderCollision();
       break;
     }
     case "longBands": {
-      createPlanets(uiSettings.planets);
-      commonSettingsOnChange();
+      createPlanets({ numberOfPlanets: getNumberOfPlanets() });
+      updatePlanetsForComputeShaderCollision();
       break;
     }
   }
 };
-setupUI({ callback: uiCallback });
+// FIXME: because we are using the `listen()` on planets,
+// it is not allowing us to change the number of planets in the UI
+// via the keyboard (only slider works)
+const { planetsGUIListener } = setupUI({ callback: uiCallback });
 
 // Renders on the same frame must use the same render pass, otherwise
 // it switches (either one or the other, not both)
@@ -332,7 +365,6 @@ function frame() {
   renderPlanets({
     renderPass,
     enableArmor: uiSettings.armor,
-    numberOfPlanets: uiSettings.planets,
     ellipse_a: uiSettings.ellipse_a,
     eccentricity: uiSettings.eccentricity,
     topology: uiSettings.topology,
@@ -344,7 +376,7 @@ function frame() {
   if (uiSettings.tail) {
     renderTail({
       currentFrame,
-      numberOfPlanets: uiSettings.planets,
+      numberOfPlanets: getNumberOfPlanets(),
       planetsBuffers,
       modelMatrixUniformBufferSize: getModelMatrixUniformBufferSize(),
       allModelMatrices: getAllModelMatrices(),
@@ -353,39 +385,24 @@ function frame() {
     });
   }
 
-  if (
-    (currentFrame === 0 && uiSettings.checkCollisions) ||
-    (currentFrame % CHECK_COLLISION_FREQUENCY === 0 &&
-      uiSettings.checkCollisions)
-  ) {
-    planetsCenterPointsAndRadius = getPlanetsCenterPointAndRadius({
-      numberOfPlanets: uiSettings.planets,
-      planetsBuffers,
-      modelMatrixUniformBufferSize: getModelMatrixUniformBufferSize(),
-      allModelMatrices: getAllModelMatrices(),
-    }).map((item) => vec4.fromValues(item.x, item.y, item.z, item.radius));
-  }
-
-  // Create the compute shader buffers as soon as we start the
-  // application and after we rendered planets
-  if (currentFrame === 0 && uiSettings.checkCollisions) {
-    recreateComputeShaderBuffers({
-      numberOfPlanets: uiSettings.planets,
-      planetsCenterPointsAndRadius,
-    });
-  }
-
   // Only check for collisions every so often
   if (
     currentFrame % CHECK_COLLISION_FREQUENCY === 0 &&
     uiSettings.checkCollisions
   ) {
+    planetsCenterPointsAndRadius = getPlanetsCenterPointAndRadius({
+      numberOfPlanets: getNumberOfPlanets(),
+      planetsBuffers,
+      modelMatrixUniformBufferSize: getModelMatrixUniformBufferSize(),
+      allModelMatrices: getAllModelMatrices(),
+    }).map((item) => vec4.fromValues(item.x, item.y, item.z, item.radius));
+
     checkCollisionViaComputeShader({
-      numberOfPlanets: uiSettings.planets,
-      recreateBuffers: currentPlanetsForComputeShader !== uiSettings.planets,
+      numberOfPlanets: getNumberOfPlanets(),
+      recreateBuffers: currentPlanetsForComputeShader !== getNumberOfPlanets(),
       planetsCenterPointsAndRadius,
     });
-    currentPlanetsForComputeShader = uiSettings.planets;
+    currentPlanetsForComputeShader = getNumberOfPlanets();
   }
   currentFrame++;
 

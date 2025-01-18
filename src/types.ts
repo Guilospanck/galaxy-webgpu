@@ -13,3 +13,8 @@ export type PlanetCenterPointRadiusAndIndex = {
   radius: number;
   planetIdx: number;
 };
+
+export type CollisionPair = {
+  a: number;
+  b: number;
+};
