@@ -55,7 +55,7 @@ const updatePlanetsForComputeShaderCollision = () => {
   observer.subscribe("planets", {
     id: OBSERVER_ID,
     callback: (planets) => {
-      createPlanets({});
+      createPlanets({ numberOfPlanets: planets as number });
 
       if (UI_SETTINGS.enableTail) {
         resetTailVariables();

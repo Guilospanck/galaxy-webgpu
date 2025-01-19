@@ -53,8 +53,8 @@ primitive: { topology: "triangle-list" }, // Change this to `point-list` to have
 
 Not sure it is working properly.
 
-## Add some collision effect
+## (Ongoing) Refactor and improve code
 
-## Refactor and improve code
+## (Ongoing, so far it creates a new planet) Add some collision effect
 
 ## Add resize observer to the canvas
