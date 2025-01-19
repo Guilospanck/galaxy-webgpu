@@ -243,8 +243,7 @@ const {
 
 //// VERTEX AND FRAGMENT SHADER STUFF ///////
 //
-// INFO: we are using an async constructor
-const textures = await new PlanetTextures(device);
+const textures = await PlanetTextures(device);
 
 // Depth Buffer
 const depthTexture = device.createTexture({
@@ -362,7 +361,7 @@ export const createPlanets = ({
     });
 
     // Create texture buffer
-    const texture = textures.getTextureBasedOnIndex(i % textures.length);
+    const texture = textures.getTextureBasedOnIndex(i % textures.LENGTH);
     console.assert(texture !== null, `Failed to load texture ${i}`);
 
     planetsBuffers.push({
