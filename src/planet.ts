@@ -1,15 +1,7 @@
-import {
-  CAMERA_UP,
-  CHECK_COLLISION_FREQUENCY,
-  MAT4X4_BYTE_LENGTH,
-  RENDER_TAIL_FREQUENCY,
-} from "./constants";
-import {
-  getPlanetsCenterPointAndRadius,
-  getViewProjectionMatrix,
-} from "./utils";
+import { CHECK_COLLISION_FREQUENCY, RENDER_TAIL_FREQUENCY } from "./constants";
+import { getPlanetsCenterPointAndRadius } from "./utils";
 import { initWebGPUAndCanvas } from "./webgpu";
-import { vec3, vec4 } from "gl-matrix";
+import { vec4 } from "gl-matrix";
 import planetWGSL from "./shaders/planet.wgsl?raw";
 import Stats from "stats.js";
 import { SetupUI, UI_SETTINGS } from "./ui";
@@ -18,12 +10,8 @@ import { Collisions } from "./collision";
 import { Tail } from "./tail";
 import { Render } from "./render";
 import { Observer } from "./observer";
-import {
-  DEFAULT_POINTER_EVENTS,
-  PointerEventsTransformations,
-  SetupPointerEvents,
-} from "./pointerEvents";
 import { CreatePlanets } from "./createPlanets";
+import { SetupCamera } from "./camera";
 
 /// Setup observers
 const OBSERVER_ID = "planet.ts";
@@ -80,7 +68,8 @@ const updatePlanetsForComputeShaderCollision = () => {
         ellipse_a: UI_SETTINGS.ellipseA,
         eccentricity: UI_SETTINGS.eccentricity,
         topology: UI_SETTINGS.topology,
-        viewProjectionMatrixUniformBuffer,
+        viewProjectionMatrixUniformBuffer:
+          getViewProjectionMatrixUniformBuffer(),
         planetsBuffers: getPlanetsBuffers(),
       });
     },
@@ -124,7 +113,8 @@ const updatePlanetsForComputeShaderCollision = () => {
         planetsBuffers: getPlanetsBuffers(),
         modelMatrixUniformBufferSize: getModelMatrixUniformBufferSize(),
         allModelMatrices: getAllModelMatrices(),
-        viewProjectionMatrixUniformBuffer,
+        viewProjectionMatrixUniformBuffer:
+          getViewProjectionMatrixUniformBuffer(),
         renderPass,
         recalculateTailBuffer: (
           renderTailInfo as { recalculateTailBuffer: boolean }
@@ -190,16 +180,6 @@ const updatePlanetsForComputeShaderCollision = () => {
       });
     },
   });
-
-  observer.subscribe("pointerEvents", {
-    id: OBSERVER_ID,
-    callback: (pointerEvents) => {
-      // Only recalculate View-Projection matrix if the camera position has changed.
-      calculateAndSetViewProjectionMatrix(
-        pointerEvents as PointerEventsTransformations,
-      );
-    },
-  });
 })();
 
 /// FPS Stats
@@ -211,10 +191,11 @@ document.body.appendChild(stats.dom);
 /// If the user/browser doesn't have working WebGPU yet, this will throw early.
 const { canvas, context, device, format } = await initWebGPUAndCanvas();
 
-const perspectiveAspectRatio = canvas.width / canvas.height;
-
-/// Setup pointer events
-SetupPointerEvents(canvas);
+// Setup camera
+const { getViewProjectionMatrixUniformBuffer } = SetupCamera({
+  device,
+  canvas,
+});
 
 /// Setup UI
 SetupUI();
@@ -265,39 +246,6 @@ const depthTexture = device.createTexture({
   format: "depth24plus",
   usage: GPUTextureUsage.RENDER_ATTACHMENT,
 });
-
-let viewProjectionMatrixUniformBuffer: GPUBuffer;
-const calculateAndSetViewProjectionMatrix = ({
-  rotationAngleX,
-  rotationAngleY,
-  scale,
-  offsetX,
-  offsetY,
-}: PointerEventsTransformations) => {
-  // Create view projection matrix uniform buffer
-  viewProjectionMatrixUniformBuffer = device.createBuffer({
-    label: "view projection matrix uniform coordinates buffer",
-    size: MAT4X4_BYTE_LENGTH,
-    usage: GPUBufferUsage.UNIFORM,
-    mappedAtCreation: true,
-  });
-  const cameraEye: vec3 = [-offsetX, offsetY, scale];
-  const cameraLookupCenter: vec3 = [-offsetX, offsetY, 0];
-  const viewProjectionMatrix = getViewProjectionMatrix({
-    cameraRotationX: -rotationAngleY,
-    cameraRotationZ: rotationAngleX,
-    cameraEye,
-    cameraLookupCenter,
-    cameraUp: CAMERA_UP,
-    perspectiveAspectRatio,
-  });
-
-  new Float32Array(viewProjectionMatrixUniformBuffer.getMappedRange()).set(
-    viewProjectionMatrix,
-  );
-  viewProjectionMatrixUniformBuffer.unmap();
-};
-calculateAndSetViewProjectionMatrix(DEFAULT_POINTER_EVENTS);
 
 const passDescriptor: GPURenderPassDescriptor = {
   label: "pass descriptor element",

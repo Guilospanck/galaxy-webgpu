@@ -56,6 +56,8 @@ Not sure it is working properly.
 ## (Ongoing) Refactor and improve code
 
 TODO: change from arrow function to regular functions inside functional components.
+TODO: fix the latBands and longBands not updating current rendered planets
+TODO: fix the UI not updating when planets change (collisions creates a new planet)
 
 ## (Ongoing, so far it creates a new planet) Add some collision effect
 
