@@ -1,7 +1,7 @@
 import { vec4 } from "gl-matrix";
 import { WORKGROUP_SIZE } from "./constants";
-import { createPlanets } from "./planet";
 import { CollisionPair } from "./types";
+import { Observer } from "./observer";
 
 export const Collisions = ({
   device,
@@ -144,32 +144,15 @@ export const Collisions = ({
     }
 
     console.info(`Collisions found: ${collisions.length}`);
-
-    // Create a new planet for each collision found.
-    createPlanets({
-      numberOfPlanets: collisions.length,
-      radius: 3,
-      addNew: true,
-    });
+    Observer().notify("collisions", collisions);
   };
 
   const checkCollisionViaComputeShader = async ({
     numberOfPlanets,
-    recreateBuffers = false,
-    planetsCenterPointsAndRadius,
   }: {
     numberOfPlanets: number;
-    recreateBuffers: boolean;
-    planetsCenterPointsAndRadius: vec4[];
   }) => {
     console.info("Checking collisions...");
-
-    if (recreateBuffers) {
-      recreateComputeShaderBuffers({
-        numberOfPlanets,
-        planetsCenterPointsAndRadius,
-      });
-    }
 
     // Create Command Encoder
     const computeShaderCommandEncoder = device.createCommandEncoder({

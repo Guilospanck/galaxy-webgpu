@@ -7,24 +7,191 @@ import {
   createSphereMesh,
   getPlanetsCenterPointAndRadius,
   getViewProjectionMatrix,
-  hasCameraChangedPositions,
-  PointerEventsCallbackData,
-  PointerEventsTransformations,
-  setupPointerEvents,
 } from "./utils";
 import { initWebGPUAndCanvas } from "./webgpu";
 import { vec3, vec4 } from "gl-matrix";
 import { PlanetTextures } from "./textures";
 import planetWGSL from "./shaders/planet.wgsl?raw";
 import Stats from "stats.js";
-import { SettingsType, setupUI, uiSettings } from "./ui";
-import { PlanetInfo } from "./types";
+import { SetupUI, UI_SETTINGS } from "./ui";
+import { CollisionPair, PlanetInfo } from "./types";
 import { Collisions } from "./collision";
 import { Tail } from "./tail";
 import { Render } from "./render";
+import { Observer } from "./observer";
+import {
+  DEFAULT_POINTER_EVENTS,
+  PointerEventsTransformations,
+  SetupPointerEvents,
+} from "./pointerEvents";
 
+/// Setup observers
+const OBSERVER_ID = "planet.ts";
+const resetTailVariables = () => {
+  resetTailCenterPositionsComplete();
+  resetCoordinatesPerPlanet();
+};
+const updatePlanetsForComputeShaderCollision = () => {
+  if (!UI_SETTINGS.enableCollisions) {
+    return;
+  }
+
+  const planetsCenterPointsAndRadius = getPlanetsCenterPointAndRadius({
+    numberOfPlanets: getNumberOfPlanets(),
+    planetsBuffers,
+    modelMatrixUniformBufferSize: getModelMatrixUniformBufferSize(),
+    allModelMatrices: getAllModelMatrices(),
+  }).map((item) => vec4.fromValues(item.x, item.y, item.z, item.radius));
+
+  recreateComputeShaderBuffers({
+    numberOfPlanets: getNumberOfPlanets(),
+    planetsCenterPointsAndRadius,
+  });
+};
+(() => {
+  const observer = Observer();
+
+  observer.subscribe("planets", {
+    id: OBSERVER_ID,
+    callback: (planets) => {
+      createPlanets({ numberOfPlanets: planets as number });
+
+      if (UI_SETTINGS.enableTail) {
+        resetTailVariables();
+        updateVariableTailBuffers({
+          numberOfPlanets: planets as number,
+          planetsBuffers,
+          modelMatrixUniformBufferSize: getModelMatrixUniformBufferSize(),
+          allModelMatrices: getAllModelMatrices(),
+        });
+      }
+    },
+  });
+
+  observer.subscribe("renderPlanets", {
+    id: OBSERVER_ID,
+    callback: (_renderPlanets) => {
+      renderPlanets({
+        renderPass,
+        enableArmor: UI_SETTINGS.enableArmor,
+        ellipse_a: UI_SETTINGS.ellipseA,
+        eccentricity: UI_SETTINGS.eccentricity,
+        topology: UI_SETTINGS.topology,
+        viewProjectionMatrixUniformBuffer,
+        planetsBuffers,
+      });
+    },
+  });
+
+  observer.subscribe("eccentricity", {
+    id: OBSERVER_ID,
+    callback: (_eccentricity) => {
+      updatePlanetsForComputeShaderCollision();
+    },
+  });
+
+  observer.subscribe("ellipseA", {
+    id: OBSERVER_ID,
+    callback: (_eccentricity) => {
+      updatePlanetsForComputeShaderCollision();
+    },
+  });
+
+  observer.subscribe("enableTail", {
+    id: OBSERVER_ID,
+    callback: (enableTail) => {
+      if (!enableTail) {
+        resetTailVariables();
+      } else {
+        updateVariableTailBuffers({
+          numberOfPlanets: getNumberOfPlanets(),
+          planetsBuffers,
+          modelMatrixUniformBufferSize: getModelMatrixUniformBufferSize(),
+          allModelMatrices: getAllModelMatrices(),
+        });
+      }
+    },
+  });
+
+  observer.subscribe("renderTail", {
+    id: OBSERVER_ID,
+    callback: (_renderTail) => {
+      renderTail({
+        currentFrame,
+        numberOfPlanets: getNumberOfPlanets(),
+        planetsBuffers,
+        modelMatrixUniformBufferSize: getModelMatrixUniformBufferSize(),
+        allModelMatrices: getAllModelMatrices(),
+        viewProjectionMatrixUniformBuffer,
+        renderPass,
+      });
+    },
+  });
+
+  observer.subscribe("enableCollisions", {
+    id: OBSERVER_ID,
+    callback: (_enableCollisions) => {
+      updatePlanetsForComputeShaderCollision();
+    },
+  });
+
+  observer.subscribe("topology", {
+    id: OBSERVER_ID,
+    callback: (_topology) => {
+      updatePlanetsForComputeShaderCollision();
+    },
+  });
+
+  observer.subscribe("latBands", {
+    id: OBSERVER_ID,
+    callback: (_latBands) => {
+      createPlanets({ numberOfPlanets: getNumberOfPlanets() });
+      updatePlanetsForComputeShaderCollision();
+    },
+  });
+
+  observer.subscribe("longBands", {
+    id: OBSERVER_ID,
+    callback: (_longBands) => {
+      createPlanets({ numberOfPlanets: getNumberOfPlanets() });
+      updatePlanetsForComputeShaderCollision();
+    },
+  });
+
+  observer.subscribe("collisions", {
+    id: OBSERVER_ID,
+    callback: (collisions) => {
+      // Create a new planet for each collision found.
+      createPlanets({
+        numberOfPlanets: (collisions as CollisionPair[]).length,
+        radius: 3,
+        addNew: true,
+      });
+    },
+  });
+
+  observer.subscribe("checkCollisions", {
+    id: OBSERVER_ID,
+    callback: (_checkCollisions) => {
+      checkCollisionViaComputeShader({
+        numberOfPlanets: getNumberOfPlanets(),
+      });
+    },
+  });
+
+  observer.subscribe("pointerEvents", {
+    id: OBSERVER_ID,
+    callback: (pointerEvents) => {
+      // Only recalculate View-Projection matrix if the camera position has changed.
+      calculateAndSetViewProjectionMatrix(
+        pointerEvents as PointerEventsTransformations,
+      );
+    },
+  });
+})();
+
+/// FPS Stats
 const stats = new Stats();
-
 stats.showPanel(0); // 0: fps, 1: ms, 2: mb, 3+: custom
 document.body.appendChild(stats.dom);
 
@@ -34,26 +201,8 @@ const { canvas, context, device, format } = await initWebGPUAndCanvas();
 
 const perspectiveAspectRatio = canvas.width / canvas.height;
 
-/// Pointer events
-const pointerEvents: PointerEventsTransformations = {
-  rotationAngleX: 0,
-  rotationAngleY: 0,
-  scale: 5,
-  offsetX: 0,
-  offsetY: 0,
-};
-const callbackUpdatePointerEvents = (data: PointerEventsCallbackData): void => {
-  pointerEvents.rotationAngleX = data.rotationAngleX;
-  pointerEvents.rotationAngleY = data.rotationAngleY;
-  pointerEvents.scale = data.scale;
-  pointerEvents.offsetX = data.offsetX;
-  pointerEvents.offsetY = data.offsetY;
-};
-setupPointerEvents({
-  canvas,
-  pointerEvents,
-  callback: callbackUpdatePointerEvents,
-});
+/// Setup pointer events
+SetupPointerEvents(canvas);
 
 // Create Shader Module from WGSL file
 const shaderModule = device.createShaderModule({ code: planetWGSL });
@@ -103,7 +252,7 @@ const calculateAndSetViewProjectionMatrix = ({
   );
   viewProjectionMatrixUniformBuffer.unmap();
 };
-calculateAndSetViewProjectionMatrix(pointerEvents);
+calculateAndSetViewProjectionMatrix(DEFAULT_POINTER_EVENTS);
 
 const createPlanetAndItsBuffers = ({
   radius = 1,
@@ -112,8 +261,8 @@ const createPlanetAndItsBuffers = ({
 }): PlanetInfo => {
   const { positionAndTexCoords, indices } = createSphereMesh({
     radius,
-    latBands: uiSettings.latBands,
-    longBands: uiSettings.longBands,
+    latBands: UI_SETTINGS.latBands,
+    longBands: UI_SETTINGS.longBands,
   });
 
   // Create Position and TexCoords Buffer (VERTEX BUFFER)
@@ -160,8 +309,8 @@ export const createPlanets = ({
   addNew?: boolean;
 }) => {
   if (addNew) {
-    setNumberOfPlanets(getNumberOfPlanets() + numberOfPlanets);
-    uiSettings.planets = getNumberOfPlanets();
+    Observer().notify("planets", getNumberOfPlanets() + numberOfPlanets);
+    UI_SETTINGS.planets = getNumberOfPlanets();
     planetsGUIListener.updateDisplay();
   }
 
@@ -192,7 +341,7 @@ export const createPlanets = ({
     });
   }
 };
-createPlanets({ numberOfPlanets: uiSettings.planets });
+createPlanets({ numberOfPlanets: UI_SETTINGS.planets });
 
 /// Collision computation
 const { checkCollisionViaComputeShader, recreateComputeShaderBuffers } =
@@ -211,22 +360,13 @@ const {
   renderPlanets,
   getModelMatrixUniformBufferSize,
   getAllModelMatrices,
-  setNumberOfPlanets,
   getNumberOfPlanets,
 } = Render({
   device,
   shaderModule,
   format,
-  numberOfPlanets: uiSettings.planets,
+  numberOfPlanets: UI_SETTINGS.planets,
 });
-
-/// Variables to check for conditional rendering
-// INFO: this is different because the compute shader does not run on every frame
-let currentPlanetsForComputeShader = uiSettings.planets;
-// INFO: this variavble does not update automatically when rotation angles change
-let currentCameraConfigurations: PointerEventsTransformations = {
-  ...pointerEvents,
-};
 
 const passDescriptor: GPURenderPassDescriptor = {
   label: "pass descriptor element",
@@ -248,98 +388,14 @@ const passDescriptor: GPURenderPassDescriptor = {
 
 let currentFrame = 1;
 
-const resetTailVariables = () => {
-  resetTailCenterPositionsComplete();
-  resetCoordinatesPerPlanet();
-};
-const updatePlanetsForComputeShaderCollision = () => {
-  if (!uiSettings.checkCollisions) {
-    return;
-  }
-
-  planetsCenterPointsAndRadius = getPlanetsCenterPointAndRadius({
-    numberOfPlanets: getNumberOfPlanets(),
-    planetsBuffers,
-    modelMatrixUniformBufferSize: getModelMatrixUniformBufferSize(),
-    allModelMatrices: getAllModelMatrices(),
-  }).map((item) => vec4.fromValues(item.x, item.y, item.z, item.radius));
-
-  recreateComputeShaderBuffers({
-    numberOfPlanets: getNumberOfPlanets(),
-    planetsCenterPointsAndRadius,
-  });
-};
-const uiCallback = (type: SettingsType, value?: unknown) => {
-  switch (type) {
-    case "planets": {
-      setNumberOfPlanets(value as number);
-      createPlanets({ numberOfPlanets: value as number });
-
-      if (uiSettings.tail) {
-        resetTailVariables();
-        updateVariableTailBuffers({
-          numberOfPlanets: value as number,
-          planetsBuffers,
-          modelMatrixUniformBufferSize: getModelMatrixUniformBufferSize(),
-          allModelMatrices: getAllModelMatrices(),
-        });
-      }
-      break;
-    }
-    case "eccentricity": {
-      updatePlanetsForComputeShaderCollision();
-      break;
-    }
-    case "ellipse_a": {
-      updatePlanetsForComputeShaderCollision();
-      break;
-    }
-    case "armor": {
-      break;
-    }
-    case "tail": {
-      if (!value) {
-        resetTailVariables();
-      } else {
-        updateVariableTailBuffers({
-          numberOfPlanets: value as number,
-          planetsBuffers,
-          modelMatrixUniformBufferSize: getModelMatrixUniformBufferSize(),
-          allModelMatrices: getAllModelMatrices(),
-        });
-      }
-
-      break;
-    }
-    case "checkCollisions": {
-      updatePlanetsForComputeShaderCollision();
-      break;
-    }
-    case "topology": {
-      updatePlanetsForComputeShaderCollision();
-      break;
-    }
-    case "latBands": {
-      createPlanets({ numberOfPlanets: getNumberOfPlanets() });
-      updatePlanetsForComputeShaderCollision();
-      break;
-    }
-    case "longBands": {
-      createPlanets({ numberOfPlanets: getNumberOfPlanets() });
-      updatePlanetsForComputeShaderCollision();
-      break;
-    }
-  }
-};
 // FIXME: because we are using the `listen()` on planets,
 // it is not allowing us to change the number of planets in the UI
 // via the keyboard (only slider works)
-const { planetsGUIListener } = setupUI({ callback: uiCallback });
+const { planetsGUIListener } = SetupUI();
 
 // Renders on the same frame must use the same render pass, otherwise
 // it switches (either one or the other, not both)
 let renderPass: GPURenderPassEncoder;
-let planetsCenterPointsAndRadius: vec4[] = [];
 function frame() {
   stats.begin();
 
@@ -351,66 +407,35 @@ function frame() {
   const commandEncoder = device.createCommandEncoder({
     label: "vertex/fragment shaders common command encoder",
   });
+
   // Create a render pass that is common to all renders,
   // be them vertex/fragment shaders (not compute shaders)
   renderPass = commandEncoder.beginRenderPass(passDescriptor);
 
-  // Only recalculate View-Projection matrix if the camera position has changed.
-  if (hasCameraChangedPositions(currentCameraConfigurations, pointerEvents)) {
-    calculateAndSetViewProjectionMatrix(pointerEvents);
-    currentCameraConfigurations = { ...pointerEvents };
-  }
-
   // Render the planets
-  renderPlanets({
-    renderPass,
-    enableArmor: uiSettings.armor,
-    ellipse_a: uiSettings.ellipse_a,
-    eccentricity: uiSettings.eccentricity,
-    topology: uiSettings.topology,
-    viewProjectionMatrixUniformBuffer,
-    planetsBuffers,
-  });
+  Observer().notify("renderPlanets", true);
 
   // Render the tail (if setting is activated)
-  if (uiSettings.tail) {
-    renderTail({
-      currentFrame,
-      numberOfPlanets: getNumberOfPlanets(),
-      planetsBuffers,
-      modelMatrixUniformBufferSize: getModelMatrixUniformBufferSize(),
-      allModelMatrices: getAllModelMatrices(),
-      viewProjectionMatrixUniformBuffer,
-      renderPass,
-    });
+  if (UI_SETTINGS.enableTail) {
+    Observer().notify("renderTail", true);
   }
 
   // Only check for collisions every so often
   if (
     currentFrame % CHECK_COLLISION_FREQUENCY === 0 &&
-    uiSettings.checkCollisions
+    UI_SETTINGS.enableCollisions
   ) {
-    planetsCenterPointsAndRadius = getPlanetsCenterPointAndRadius({
-      numberOfPlanets: getNumberOfPlanets(),
-      planetsBuffers,
-      modelMatrixUniformBufferSize: getModelMatrixUniformBufferSize(),
-      allModelMatrices: getAllModelMatrices(),
-    }).map((item) => vec4.fromValues(item.x, item.y, item.z, item.radius));
-
-    checkCollisionViaComputeShader({
-      numberOfPlanets: getNumberOfPlanets(),
-      recreateBuffers: currentPlanetsForComputeShader !== getNumberOfPlanets(),
-      planetsCenterPointsAndRadius,
-    });
-    currentPlanetsForComputeShader = getNumberOfPlanets();
+    Observer().notify("checkCollisions", true);
   }
-  currentFrame++;
 
   // Finalise render pass (common to all vertex/fragment shaders, not compute shader)
   renderPass.end();
 
   // Submit Commands
   device.queue.submit([commandEncoder.finish()]);
+
+  // Update current frame
+  currentFrame++;
 
   stats.end();
 

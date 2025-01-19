@@ -4,9 +4,6 @@ import {
   FAR_FRUSTUM,
   MAT4X4_BYTE_LENGTH,
   NEAR_FRUSTUM,
-  PAN_SENSITIVITY,
-  ROTATION_SENSITIVITY,
-  ZOOM_FACTOR_SENSITIVITY,
 } from "./constants";
 import { PlanetCenterPointRadiusAndIndex, PlanetInfo } from "./types";
 
@@ -178,92 +175,6 @@ export const calculateXYZEllipseCoordinates = ({
   return { x, y, z };
 };
 
-export type PointerEventsCallbackData = {
-  rotationAngleX: number;
-  rotationAngleY: number;
-  scale: number;
-  offsetX: number;
-  offsetY: number;
-};
-
-export type PointerEventsTransformations = {
-  rotationAngleX: number;
-  rotationAngleY: number;
-  scale: number;
-  offsetX: number;
-  offsetY: number;
-};
-
-type PointerEventsInput = {
-  canvas: HTMLCanvasElement;
-  pointerEvents: PointerEventsTransformations;
-  callback: (data: PointerEventsCallbackData) => void;
-};
-
-/// Adds pointer events to the canvas for panning, zooming and rotating (when holding shift).
-//
-export const setupPointerEvents = (input: PointerEventsInput): void => {
-  const { canvas, callback } = input;
-  let { rotationAngleX, rotationAngleY, scale, offsetX, offsetY } =
-    input.pointerEvents;
-
-  let isDragging = false;
-  let lastPointerX: number | null = null;
-  let lastPointerY: number | null = null;
-
-  canvas.addEventListener("pointerdown", (event) => {
-    isDragging = true;
-    lastPointerX = event.clientX;
-    lastPointerY = event.clientY;
-  });
-
-  canvas.addEventListener("pointermove", (event) => {
-    if (!isDragging || lastPointerX === null || lastPointerY === null) return;
-
-    const deltaX = event.clientX - lastPointerX;
-    const deltaY = event.clientY - lastPointerY;
-
-    if (event.shiftKey) {
-      // Rotate if Shift key is pressed
-      rotationAngleX += deltaX * ROTATION_SENSITIVITY; // Adjust sensitivity
-      rotationAngleY += deltaY * ROTATION_SENSITIVITY; // Adjust sensitivity
-    } else {
-      // Pan otherwise
-      offsetX += deltaX * PAN_SENSITIVITY;
-      offsetY += deltaY * PAN_SENSITIVITY;
-    }
-
-    lastPointerX = event.clientX;
-    lastPointerY = event.clientY;
-    callback({ rotationAngleX, rotationAngleY, scale, offsetX, offsetY });
-  });
-
-  canvas.addEventListener("pointerup", () => {
-    isDragging = false;
-    lastPointerX = null;
-    lastPointerY = null;
-  });
-
-  canvas.addEventListener("pointerleave", () => {
-    isDragging = false;
-    lastPointerX = null;
-    lastPointerY = null;
-  });
-
-  // Wheel event for zooming
-  canvas.addEventListener("wheel", (event) => {
-    event.preventDefault();
-
-    if (event.deltaY < 0) {
-      scale *= ZOOM_FACTOR_SENSITIVITY; // Zoom in
-    } else {
-      scale /= ZOOM_FACTOR_SENSITIVITY; // Zoom out
-    }
-
-    callback({ rotationAngleX, rotationAngleY, scale, offsetX, offsetY });
-  });
-};
-
 type ModelInputParams = {
   modelRotationX?: number;
   modelRotationY?: number;
@@ -410,29 +321,6 @@ export const getModelViewProjectionMatrix = (
 
 export const roundUp = (size: number, alignment: number) =>
   Math.ceil(size / alignment) * alignment;
-
-export const hasCameraChangedPositions = (
-  currCameraInfo: PointerEventsTransformations,
-  newCameraInfo: PointerEventsTransformations,
-): boolean => {
-  if (currCameraInfo.rotationAngleX !== newCameraInfo.rotationAngleX) {
-    return true;
-  }
-  if (currCameraInfo.rotationAngleY !== newCameraInfo.rotationAngleY) {
-    return true;
-  }
-  if (currCameraInfo.offsetX !== newCameraInfo.offsetX) {
-    return true;
-  }
-  if (currCameraInfo.offsetX !== newCameraInfo.offsetX) {
-    return true;
-  }
-  if (currCameraInfo.scale !== newCameraInfo.scale) {
-    return true;
-  }
-
-  return false;
-};
 
 // INFO: @deprecated because we are not calculating the simple combination
 // in order to have the right size for the collisionsBuffer (number of possible

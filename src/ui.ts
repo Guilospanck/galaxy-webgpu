@@ -1,4 +1,4 @@
-import { GUI } from "dat.gui";
+import { GUI, GUIController } from "dat.gui";
 
 import {
   DEFAULT_ECCENTRICITY,
@@ -22,67 +22,81 @@ import {
   PLANETS_STEP,
   TOPOLOGIES,
 } from "./constants";
+import { Observer } from "./observer";
 
-export const uiSettings = {
+export const UI_SETTINGS = {
   planets: DEFAULT_PLANETS,
   eccentricity: DEFAULT_ECCENTRICITY,
-  ellipse_a: DEFAULT_ELLIPSE_A,
-  armor: false,
-  tail: false,
-  checkCollisions: false,
+  ellipseA: DEFAULT_ELLIPSE_A,
   topology: DEFAULT_TOPOLOGY,
   latBands: DEFAULT_LAT_BANDS,
   longBands: DEFAULT_LONG_BANDS,
+  enableArmor: false,
+  enableTail: false,
+  enableCollisions: false,
 };
 
-export type SettingsType =
-  | "planets"
-  | "eccentricity"
-  | "ellipse_a"
-  | "armor"
-  | "tail"
-  | "checkCollisions"
-  | "topology"
-  | "latBands"
-  | "longBands";
+interface UI {
+  planetsGUIListener: GUIController<object>;
+}
 
-export const setupUI = ({
-  callback,
-}: {
-  callback: (type: SettingsType, value?: unknown) => void;
-}) => {
-  const gui = new GUI();
-  const planetsGUIListener = gui
-    .add(uiSettings, "planets", MIN_PLANETS, MAX_PLANETS)
-    .step(PLANETS_STEP)
-    .onChange((numOfPlanets) => callback("planets", numOfPlanets))
-    .listen();
-  gui
-    .add(uiSettings, "eccentricity", MIN_ECCENTRICITY, MAX_ECCENTRICITY)
-    .step(ECCENTRICITY_STEP)
-    .onChange(() => callback("eccentricity"));
-  gui
-    .add(uiSettings, "ellipse_a", MIN_ELLIPSE_A, MAX_ELLIPSE_A)
-    .step(ELLIPSE_A_STEP)
-    .onChange(() => callback("ellipse_a"));
-  gui.add(uiSettings, "armor").onChange(() => callback("armor"));
-  gui
-    .add(uiSettings, "tail")
-    .onChange((tail: boolean) => callback("tail", tail));
-  gui
-    .add(uiSettings, "checkCollisions")
-    .onChange((check: boolean) => callback("checkCollisions", check));
-  gui
-    .add(uiSettings, "topology", TOPOLOGIES)
-    .onChange(() => callback("topology"));
-  gui
-    .add(uiSettings, "latBands", MIN_LAT_BANDS, MAX_LAT_BANDS)
-    .onChange(() => callback("latBands"));
-  gui
-    .add(uiSettings, "longBands", MIN_LONG_BANDS, MAX_LONG_BANDS)
-    .onChange(() => callback("longBands"));
+export const SetupUI = (() => {
+  let singleton: UI | null = null;
 
-  return {
-    planetsGUIListener,
+  return () => {
+    if (singleton) {
+      return singleton;
+    }
+
+    const gui = new GUI();
+
+    const planetsGUIListener = gui
+      .add(UI_SETTINGS, "planets", MIN_PLANETS, MAX_PLANETS)
+      .step(PLANETS_STEP)
+      .onChange((numOfPlanets) => {
+        Observer().notify("planets", numOfPlanets);
+      })
+      .listen();
+    gui
+      .add(UI_SETTINGS, "eccentricity", MIN_ECCENTRICITY, MAX_ECCENTRICITY)
+      .step(ECCENTRICITY_STEP)
+      .onChange((eccentricity) => {
+        Observer().notify("eccentricity", eccentricity);
+      });
+    gui
+      .add(UI_SETTINGS, "ellipseA", MIN_ELLIPSE_A, MAX_ELLIPSE_A)
+      .step(ELLIPSE_A_STEP)
+      .onChange((ellipseA) => {
+        Observer().notify("ellipseA", ellipseA);
+      });
+    gui.add(UI_SETTINGS, "topology", TOPOLOGIES).onChange((topology) => {
+      Observer().notify("topology", topology);
+    });
+    gui
+      .add(UI_SETTINGS, "latBands", MIN_LAT_BANDS, MAX_LAT_BANDS)
+      .onChange((latBands) => {
+        Observer().notify("latBands", latBands);
+      });
+    gui
+      .add(UI_SETTINGS, "longBands", MIN_LONG_BANDS, MAX_LONG_BANDS)
+      .onChange((longBands) => {
+        Observer().notify("longBands", longBands);
+      });
+
+    gui.add(UI_SETTINGS, "enableTail").onChange((enableTail) => {
+      Observer().notify("enableTail", enableTail);
+    });
+    gui.add(UI_SETTINGS, "enableArmor").onChange((enableArmor) => {
+      Observer().notify("enableArmor", enableArmor);
+    });
+    gui.add(UI_SETTINGS, "enableCollisions").onChange((enableCollisions) => {
+      Observer().notify("enableCollisions", enableCollisions);
+    });
+
+    singleton = {
+      planetsGUIListener,
+    };
+
+    return singleton;
   };
-};
+})();

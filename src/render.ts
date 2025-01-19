@@ -13,6 +13,7 @@ import {
   roundUp,
 } from "./utils";
 import { PlanetInfo } from "./types";
+import { Observer } from "./observer";
 
 export const Render = ({
   format,
@@ -48,12 +49,17 @@ export const Render = ({
   );
   const lastAngleForPlanet: Record<number, number> = {};
 
-  const setNumberOfPlanets = (value: number) => {
-    planetsCount = value;
-  };
   const getNumberOfPlanets = () => planetsCount;
   const getAllModelMatrices = () => allModelMatrices;
   const getModelMatrixUniformBufferSize = () => modelMatrixUniformBufferSize;
+
+  /// Set observers
+  Observer().subscribe("planets", {
+    id: "render.ts",
+    callback: (planets) => {
+      planetsCount = planets as number;
+    },
+  });
 
   // Custom bind group that sets model matrix uniform buffer with a dynamic offset
   const bindGroupLayout = device.createBindGroupLayout({
@@ -286,8 +292,6 @@ export const Render = ({
     viewProjectionMatrixUniformBuffer: GPUBuffer;
     planetsBuffers: PlanetInfo[];
   }) => {
-    setNumberOfPlanets(planetsCount);
-
     const modelMatrixUniformBuffer = setModelMatrixUniformBuffer({
       ellipse_a,
       eccentricity,
@@ -336,7 +340,6 @@ export const Render = ({
   };
 
   return {
-    setNumberOfPlanets,
     getNumberOfPlanets,
     renderPlanets,
     getAllModelMatrices,
