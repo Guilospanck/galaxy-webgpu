@@ -130,10 +130,10 @@ const bindGroup = device.createBindGroup({
   ],
 });
 
-const renderPassDescriptor: GPURenderPassDescriptor = {
+const passDescriptor: GPURenderPassDescriptor = {
   colorAttachments: [
     {
-      view: undefined, // assigned later in the frame loop (to prevent texture being destroyed)
+      view: context.getCurrentTexture().createView(),
       loadOp: "clear",
       storeOp: "store",
       clearValue: { r: 0, g: 0.2, b: 0, a: 1 },
@@ -169,15 +169,14 @@ function frame() {
 
   device.queue.writeBuffer(uniformBuffer, 0, mvpMatrix);
 
-  /// Render
-  // Texture
-  renderPassDescriptor.colorAttachments[0].view = context
-    .getCurrentTexture()
-    .createView();
+  // Update Texture View
+  const colorAttachmentsArray = Array.from(passDescriptor.colorAttachments);
+  colorAttachmentsArray[0]!.view = context.getCurrentTexture().createView();
+  passDescriptor.colorAttachments = colorAttachmentsArray;
 
   // Command encoder
   const commandEncoder = device.createCommandEncoder();
-  const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
+  const passEncoder = commandEncoder.beginRenderPass(passDescriptor);
   passEncoder.setPipeline(pipeline);
   passEncoder.setVertexBuffer(0, vertexBuffer);
   passEncoder.setBindGroup(0, bindGroup);

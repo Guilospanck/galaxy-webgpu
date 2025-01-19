@@ -61,4 +61,6 @@ TODO: fix the UI not updating when planets change (collisions creates a new plan
 
 ## (Ongoing, so far it creates a new planet) Add some collision effect
 
+## Check if the parallelism in the collision computing is being done right now that the variables have changed
+
 ## Add resize observer to the canvas

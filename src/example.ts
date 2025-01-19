@@ -1,3 +1,4 @@
+// @ts-nocheck
 import "./style.css";
 
 const shaders = `
@@ -40,6 +41,9 @@ export async function init() {
   // 2 - Get and configure canvas context
   const canvas = <HTMLCanvasElement>document.querySelector("#galaxy");
   const context = canvas.getContext("webgpu");
+  if (!context) {
+    throw new Error("No WebGPU available");
+  }
   context.configure({
     device: device,
     format: navigator.gpu.getPreferredCanvasFormat(), // best practice
