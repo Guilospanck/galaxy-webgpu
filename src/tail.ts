@@ -1,7 +1,6 @@
 import { vec3 } from "gl-matrix";
 import { PlanetCenterPointRadiusAndIndex, PlanetInfo } from "./types";
 import { getPlanetsCenterPointAndRadius } from "./utils";
-import { RENDER_TAIL_FREQUENCY } from "./constants";
 
 export const Tail = ({
   format,
@@ -117,30 +116,27 @@ export const Tail = ({
   };
 
   const renderTail = ({
-    currentFrame,
     numberOfPlanets,
     planetsBuffers,
     modelMatrixUniformBufferSize,
     allModelMatrices,
     viewProjectionMatrixUniformBuffer,
     renderPass,
+    recalculateTailBuffer,
   }: {
-    currentFrame: number;
     numberOfPlanets: number;
     planetsBuffers: PlanetInfo[];
     modelMatrixUniformBufferSize: number;
     allModelMatrices: Float32Array;
     viewProjectionMatrixUniformBuffer: GPUBuffer;
     renderPass: GPURenderPassEncoder;
+    recalculateTailBuffer: boolean;
   }) => {
     // Only calculate the tail center positions when:
     // the current frame is a multiple of the current RENDER_TAIL_FREQUENCY;
     // - OR the array of tailCenterPositions is empty;
 
-    if (
-      currentFrame % RENDER_TAIL_FREQUENCY === 0 ||
-      tailCenterPositions.length === 0
-    ) {
+    if (recalculateTailBuffer || tailCenterPositions.length === 0) {
       updateVariableTailBuffers({
         numberOfPlanets,
         planetsBuffers,

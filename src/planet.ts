@@ -2,6 +2,7 @@ import {
   CAMERA_UP,
   CHECK_COLLISION_FREQUENCY,
   MAT4X4_BYTE_LENGTH,
+  RENDER_TAIL_FREQUENCY,
 } from "./constants";
 import {
   createSphereMesh,
@@ -54,7 +55,7 @@ const updatePlanetsForComputeShaderCollision = () => {
   observer.subscribe("planets", {
     id: OBSERVER_ID,
     callback: (planets) => {
-      createPlanets({ numberOfPlanets: planets as number });
+      createPlanets({});
 
       if (UI_SETTINGS.enableTail) {
         resetTailVariables();
@@ -115,15 +116,17 @@ const updatePlanetsForComputeShaderCollision = () => {
 
   observer.subscribe("renderTail", {
     id: OBSERVER_ID,
-    callback: (_renderTail) => {
+    callback: (renderTailInfo) => {
       renderTail({
-        currentFrame,
         numberOfPlanets: getNumberOfPlanets(),
         planetsBuffers,
         modelMatrixUniformBufferSize: getModelMatrixUniformBufferSize(),
         allModelMatrices: getAllModelMatrices(),
         viewProjectionMatrixUniformBuffer,
         renderPass,
+        recalculateTailBuffer: (
+          renderTailInfo as { recalculateTailBuffer: boolean }
+        ).recalculateTailBuffer,
       });
     },
   });
@@ -145,7 +148,7 @@ const updatePlanetsForComputeShaderCollision = () => {
   observer.subscribe("latBands", {
     id: OBSERVER_ID,
     callback: (_latBands) => {
-      createPlanets({ numberOfPlanets: getNumberOfPlanets() });
+      createPlanets({});
       updatePlanetsForComputeShaderCollision();
     },
   });
@@ -153,7 +156,7 @@ const updatePlanetsForComputeShaderCollision = () => {
   observer.subscribe("longBands", {
     id: OBSERVER_ID,
     callback: (_longBands) => {
-      createPlanets({ numberOfPlanets: getNumberOfPlanets() });
+      createPlanets({});
       updatePlanetsForComputeShaderCollision();
     },
   });
@@ -204,9 +207,39 @@ const perspectiveAspectRatio = canvas.width / canvas.height;
 /// Setup pointer events
 SetupPointerEvents(canvas);
 
-// Create Shader Module from WGSL file
+// FIXME: because we are using the `listen()` on planets,
+// it is not allowing us to change the number of planets in the UI
+// via the keyboard (only slider works)
+const { planetsGUIListener } = SetupUI();
+
+/// Create Shader Module from WGSL file
 const shaderModule = device.createShaderModule({ code: planetWGSL });
 console.assert(shaderModule !== null, "Failed to compile shader code");
+
+/// Collision computation
+const { checkCollisionViaComputeShader, recreateComputeShaderBuffers } =
+  Collisions({ device, shaderModule });
+
+/// Tail computation
+const {
+  renderTail,
+  resetCoordinatesPerPlanet,
+  resetTailCenterPositionsComplete,
+  updateVariableTailBuffers,
+} = Tail({ device, shaderModule, format });
+
+/// Render the planets
+const {
+  renderPlanets,
+  getModelMatrixUniformBufferSize,
+  getAllModelMatrices,
+  getNumberOfPlanets,
+} = Render({
+  device,
+  shaderModule,
+  format,
+  numberOfPlanets: UI_SETTINGS.planets,
+});
 
 //// VERTEX AND FRAGMENT SHADER STUFF ///////
 //
@@ -300,11 +333,11 @@ const createPlanetAndItsBuffers = ({
 ///
 let planetsBuffers: PlanetInfo[] = [];
 export const createPlanets = ({
-  numberOfPlanets,
+  numberOfPlanets = getNumberOfPlanets(),
   radius,
   addNew,
 }: {
-  numberOfPlanets: number;
+  numberOfPlanets?: number;
   radius?: number;
   addNew?: boolean;
 }) => {
@@ -341,38 +374,13 @@ export const createPlanets = ({
     });
   }
 };
-createPlanets({ numberOfPlanets: UI_SETTINGS.planets });
-
-/// Collision computation
-const { checkCollisionViaComputeShader, recreateComputeShaderBuffers } =
-  Collisions({ device, shaderModule });
-
-/// Tail computation
-const {
-  renderTail,
-  resetCoordinatesPerPlanet,
-  resetTailCenterPositionsComplete,
-  updateVariableTailBuffers,
-} = Tail({ device, shaderModule, format });
-
-/// Render the planets
-const {
-  renderPlanets,
-  getModelMatrixUniformBufferSize,
-  getAllModelMatrices,
-  getNumberOfPlanets,
-} = Render({
-  device,
-  shaderModule,
-  format,
-  numberOfPlanets: UI_SETTINGS.planets,
-});
+createPlanets({});
 
 const passDescriptor: GPURenderPassDescriptor = {
   label: "pass descriptor element",
   colorAttachments: [
     {
-      view: undefined, // assigned later
+      view: context.getCurrentTexture().createView(), // assigned later
       clearValue: { r: 0, g: 0, b: 0, a: 1 },
       loadOp: "clear",
       storeOp: "store",
@@ -386,23 +394,17 @@ const passDescriptor: GPURenderPassDescriptor = {
   },
 };
 
-let currentFrame = 1;
-
-// FIXME: because we are using the `listen()` on planets,
-// it is not allowing us to change the number of planets in the UI
-// via the keyboard (only slider works)
-const { planetsGUIListener } = SetupUI();
-
 // Renders on the same frame must use the same render pass, otherwise
 // it switches (either one or the other, not both)
 let renderPass: GPURenderPassEncoder;
+let currentFrame = 1;
 function frame() {
   stats.begin();
 
   // Update Texture View
-  passDescriptor.colorAttachments[0].view = context
-    .getCurrentTexture()
-    .createView();
+  const colorAttachmentsArray = Array.from(passDescriptor.colorAttachments);
+  colorAttachmentsArray[0]!.view = context.getCurrentTexture().createView();
+  passDescriptor.colorAttachments = colorAttachmentsArray;
 
   const commandEncoder = device.createCommandEncoder({
     label: "vertex/fragment shaders common command encoder",
@@ -417,7 +419,9 @@ function frame() {
 
   // Render the tail (if setting is activated)
   if (UI_SETTINGS.enableTail) {
-    Observer().notify("renderTail", true);
+    Observer().notify("renderTail", {
+      recalculateTailBuffer: currentFrame % RENDER_TAIL_FREQUENCY === 0,
+    });
   }
 
   // Only check for collisions every so often
