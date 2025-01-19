@@ -1,4 +1,4 @@
-import { GUI, GUIController } from "dat.gui";
+import { GUI } from "dat.gui";
 
 import {
   DEFAULT_ECCENTRICITY,
@@ -36,9 +36,7 @@ export const UI_SETTINGS = {
   enableCollisions: false,
 };
 
-interface UI {
-  planetsGUIListener: GUIController<object>;
-}
+interface UI {}
 
 export const SetupUI = (() => {
   let singleton: UI | null = null;
@@ -50,13 +48,12 @@ export const SetupUI = (() => {
 
     const gui = new GUI();
 
-    const planetsGUIListener = gui
+    gui
       .add(UI_SETTINGS, "planets", MIN_PLANETS, MAX_PLANETS)
       .step(PLANETS_STEP)
       .onChange((numOfPlanets) => {
         Observer().notify("planets", numOfPlanets);
-      })
-      .listen();
+      });
     gui
       .add(UI_SETTINGS, "eccentricity", MIN_ECCENTRICITY, MAX_ECCENTRICITY)
       .step(ECCENTRICITY_STEP)
@@ -93,9 +90,7 @@ export const SetupUI = (() => {
       Observer().notify("enableCollisions", enableCollisions);
     });
 
-    singleton = {
-      planetsGUIListener,
-    };
+    singleton = {};
 
     return singleton;
   };

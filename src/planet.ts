@@ -5,17 +5,15 @@ import {
   RENDER_TAIL_FREQUENCY,
 } from "./constants";
 import {
-  createSphereMesh,
   getPlanetsCenterPointAndRadius,
   getViewProjectionMatrix,
 } from "./utils";
 import { initWebGPUAndCanvas } from "./webgpu";
 import { vec3, vec4 } from "gl-matrix";
-import { PlanetTextures } from "./textures";
 import planetWGSL from "./shaders/planet.wgsl?raw";
 import Stats from "stats.js";
 import { SetupUI, UI_SETTINGS } from "./ui";
-import { CollisionPair, PlanetInfo } from "./types";
+import { CollisionPair } from "./types";
 import { Collisions } from "./collision";
 import { Tail } from "./tail";
 import { Render } from "./render";
@@ -25,6 +23,7 @@ import {
   PointerEventsTransformations,
   SetupPointerEvents,
 } from "./pointerEvents";
+import { CreatePlanets } from "./createPlanets";
 
 /// Setup observers
 const OBSERVER_ID = "planet.ts";
@@ -39,7 +38,7 @@ const updatePlanetsForComputeShaderCollision = () => {
 
   const planetsCenterPointsAndRadius = getPlanetsCenterPointAndRadius({
     numberOfPlanets: getNumberOfPlanets(),
-    planetsBuffers,
+    planetsBuffers: getPlanetsBuffers(),
     modelMatrixUniformBufferSize: getModelMatrixUniformBufferSize(),
     allModelMatrices: getAllModelMatrices(),
   }).map((item) => vec4.fromValues(item.x, item.y, item.z, item.radius));
@@ -55,13 +54,16 @@ const updatePlanetsForComputeShaderCollision = () => {
   observer.subscribe("planets", {
     id: OBSERVER_ID,
     callback: (planets) => {
-      createPlanets({ numberOfPlanets: planets as number });
+      createPlanets({
+        planetsToCreate: planets as number,
+        currentNumberOfPlanets: getNumberOfPlanets(),
+      });
 
       if (UI_SETTINGS.enableTail) {
         resetTailVariables();
         updateVariableTailBuffers({
           numberOfPlanets: planets as number,
-          planetsBuffers,
+          planetsBuffers: getPlanetsBuffers(),
           modelMatrixUniformBufferSize: getModelMatrixUniformBufferSize(),
           allModelMatrices: getAllModelMatrices(),
         });
@@ -79,7 +81,7 @@ const updatePlanetsForComputeShaderCollision = () => {
         eccentricity: UI_SETTINGS.eccentricity,
         topology: UI_SETTINGS.topology,
         viewProjectionMatrixUniformBuffer,
-        planetsBuffers,
+        planetsBuffers: getPlanetsBuffers(),
       });
     },
   });
@@ -106,7 +108,7 @@ const updatePlanetsForComputeShaderCollision = () => {
       } else {
         updateVariableTailBuffers({
           numberOfPlanets: getNumberOfPlanets(),
-          planetsBuffers,
+          planetsBuffers: getPlanetsBuffers(),
           modelMatrixUniformBufferSize: getModelMatrixUniformBufferSize(),
           allModelMatrices: getAllModelMatrices(),
         });
@@ -119,7 +121,7 @@ const updatePlanetsForComputeShaderCollision = () => {
     callback: (renderTailInfo) => {
       renderTail({
         numberOfPlanets: getNumberOfPlanets(),
-        planetsBuffers,
+        planetsBuffers: getPlanetsBuffers(),
         modelMatrixUniformBufferSize: getModelMatrixUniformBufferSize(),
         allModelMatrices: getAllModelMatrices(),
         viewProjectionMatrixUniformBuffer,
@@ -145,10 +147,14 @@ const updatePlanetsForComputeShaderCollision = () => {
     },
   });
 
+  // TODO: lat and longbands are only changing the `next` planets, not the current
+  // ones in the planetsBuffers variable
   observer.subscribe("latBands", {
     id: OBSERVER_ID,
     callback: (_latBands) => {
-      createPlanets({});
+      createPlanets({
+        currentNumberOfPlanets: getNumberOfPlanets(),
+      });
       updatePlanetsForComputeShaderCollision();
     },
   });
@@ -156,7 +162,9 @@ const updatePlanetsForComputeShaderCollision = () => {
   observer.subscribe("longBands", {
     id: OBSERVER_ID,
     callback: (_longBands) => {
-      createPlanets({});
+      createPlanets({
+        currentNumberOfPlanets: getNumberOfPlanets(),
+      });
       updatePlanetsForComputeShaderCollision();
     },
   });
@@ -166,7 +174,8 @@ const updatePlanetsForComputeShaderCollision = () => {
     callback: (collisions) => {
       // Create a new planet for each collision found.
       createPlanets({
-        numberOfPlanets: (collisions as CollisionPair[]).length,
+        planetsToCreate: (collisions as CollisionPair[]).length,
+        currentNumberOfPlanets: getNumberOfPlanets(),
         radius: 3,
         addNew: true,
       });
@@ -207,10 +216,8 @@ const perspectiveAspectRatio = canvas.width / canvas.height;
 /// Setup pointer events
 SetupPointerEvents(canvas);
 
-// FIXME: because we are using the `listen()` on planets,
-// it is not allowing us to change the number of planets in the UI
-// via the keyboard (only slider works)
-const { planetsGUIListener } = SetupUI();
+/// Setup UI
+SetupUI();
 
 /// Create Shader Module from WGSL file
 const shaderModule = device.createShaderModule({ code: planetWGSL });
@@ -241,9 +248,15 @@ const {
   numberOfPlanets: UI_SETTINGS.planets,
 });
 
+/// Create the planets
+const { create: createPlanets, getPlanetsBuffers } =
+  await CreatePlanets(device);
+createPlanets({
+  currentNumberOfPlanets: getNumberOfPlanets(),
+});
+
 //// VERTEX AND FRAGMENT SHADER STUFF ///////
 //
-const textures = await PlanetTextures(device);
 
 // Depth Buffer
 const depthTexture = device.createTexture({
@@ -285,95 +298,6 @@ const calculateAndSetViewProjectionMatrix = ({
   viewProjectionMatrixUniformBuffer.unmap();
 };
 calculateAndSetViewProjectionMatrix(DEFAULT_POINTER_EVENTS);
-
-const createPlanetAndItsBuffers = ({
-  radius = 1,
-}: {
-  radius?: number;
-}): PlanetInfo => {
-  const { positionAndTexCoords, indices } = createSphereMesh({
-    radius,
-    latBands: UI_SETTINGS.latBands,
-    longBands: UI_SETTINGS.longBands,
-  });
-
-  // Create Position and TexCoords Buffer (VERTEX BUFFER)
-  const vertexBuffer = device.createBuffer({
-    label: "vertices buffer",
-    size: positionAndTexCoords.length * Float32Array.BYTES_PER_ELEMENT,
-    usage: GPUBufferUsage.VERTEX,
-    mappedAtCreation: true,
-  });
-  new Float32Array(vertexBuffer.getMappedRange()).set(positionAndTexCoords);
-  vertexBuffer.unmap();
-
-  // Create Index Buffer
-  const indexBuffer = device.createBuffer({
-    label: "index buffer",
-    size: indices.length * Float32Array.BYTES_PER_ELEMENT,
-    usage: GPUBufferUsage.INDEX,
-    mappedAtCreation: true,
-  });
-  new Uint32Array(indexBuffer.getMappedRange()).set(indices);
-  indexBuffer.unmap();
-
-  return {
-    vertexBuffer,
-    indexBuffer,
-    indices,
-    radius,
-  };
-};
-
-/// INFO: One point about this: it is saving the planets' state in memory (planetsBuffer array)
-/// Therefore in the case that we select to render less planets than we currently have,
-/// it will still keep those states in memory.
-/// This is a trade-off between saving this states in memory or re-creating them.
-///
-let planetsBuffers: PlanetInfo[] = [];
-export const createPlanets = ({
-  numberOfPlanets = getNumberOfPlanets(),
-  radius,
-  addNew,
-}: {
-  numberOfPlanets?: number;
-  radius?: number;
-  addNew?: boolean;
-}) => {
-  if (addNew) {
-    Observer().notify("planets", getNumberOfPlanets() + numberOfPlanets);
-    UI_SETTINGS.planets = getNumberOfPlanets();
-    planetsGUIListener.updateDisplay();
-  }
-
-  for (let i = 0; i < numberOfPlanets; i++) {
-    // TODO: improve this. It is commented out because of
-    // the change in the latBands and lonBands uiSettings
-    // if (i < planetsBuffers.length - 1) {
-    //   continue;
-    // }
-
-    radius = radius ?? Math.random() * 2 + 1;
-
-    // Create meshes and buffers, randomizing the radius of the planet
-    const { vertexBuffer, indexBuffer, indices } = createPlanetAndItsBuffers({
-      radius,
-    });
-
-    // Create texture buffer
-    const texture = textures.getTextureBasedOnIndex(i % textures.LENGTH);
-    console.assert(texture !== null, `Failed to load texture ${i}`);
-
-    planetsBuffers.push({
-      vertexBuffer,
-      indexBuffer,
-      indices,
-      radius,
-      texture,
-    });
-  }
-};
-createPlanets({});
 
 const passDescriptor: GPURenderPassDescriptor = {
   label: "pass descriptor element",

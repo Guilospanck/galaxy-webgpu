@@ -55,6 +55,8 @@ Not sure it is working properly.
 
 ## (Ongoing) Refactor and improve code
 
+TODO: change from arrow function to regular functions inside functional components.
+
 ## (Ongoing, so far it creates a new planet) Add some collision effect
 
 ## Add resize observer to the canvas
