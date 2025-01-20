@@ -47,7 +47,7 @@ export const Render = ({
     (modelMatrixUniformBufferSize * planetsCount) /
       Float32Array.BYTES_PER_ELEMENT,
   );
-  const lastAngleForPlanet: Record<number, number> = {};
+  const lastAngleOfPlanet: Record<number, number> = {};
 
   const getNumberOfPlanets = () => planetsCount;
   const getAllModelMatrices = () => allModelMatrices;
@@ -142,7 +142,7 @@ export const Render = ({
     ellipse_a: number;
     eccentricity: number;
   }): GPUBuffer => {
-    const rotation = new Date().getTime() * ROTATION_SPEED_SENSITIVITY;
+    const zAxisRotation = new Date().getTime() * ROTATION_SPEED_SENSITIVITY;
 
     allModelMatrices = new Float32Array(
       (modelMatrixUniformBufferSize * planetsCount) /
@@ -151,8 +151,10 @@ export const Render = ({
 
     let previousTranslation: vec3 = [0, 0, 0];
     for (let i = 0; i < planetsCount; i++) {
-      const angle = ((lastAngleForPlanet[i] ?? 0) + 1) % FULL_CIRCUMFERENCE;
-      lastAngleForPlanet[i] = angle;
+      const angle =
+        ((lastAngleOfPlanet[i] ?? 0) + TRANSLATION_SPEED_SENSITIVITY) %
+        FULL_CIRCUMFERENCE;
+      lastAngleOfPlanet[i] = angle;
 
       const { x, y, z } = calculateXYZEllipseCoordinates({
         degreeAngle: angle,
@@ -166,18 +168,17 @@ export const Render = ({
         z,
       ]);
 
-      const translation =
-        new Date().getTime() * TRANSLATION_SPEED_SENSITIVITY + i;
-
       // Matrix responsible for the planet movement of translation
+      const translation = TRANSLATION_SPEED_SENSITIVITY + i;
       const translationMatrix = mat4.rotateZ(
         mat4.create(),
         mat4.create(),
         translation,
       );
+
       let modelMatrix = getModelMatrix({
         modelTranslation: previousTranslation,
-        modelRotationZ: rotation,
+        modelRotationZ: zAxisRotation,
       });
 
       modelMatrix = new Float32Array(
