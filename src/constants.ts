@@ -61,3 +61,5 @@ export const ROTATION_SENSITIVITY = 0.01;
 
 export const EMPTY_VECTOR: vec3 = [0, 0, 0];
 export const CAMERA_UP: vec3 = [0, 1, 0];
+
+export const COLLISION_CREATED_PLANET_RADIUS = 3;

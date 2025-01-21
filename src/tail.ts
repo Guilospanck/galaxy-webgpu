@@ -69,7 +69,7 @@ export const Tail = ({
     },
   });
 
-  const updateVariableTailBuffers = ({
+  function updateVariableTailBuffers({
     numberOfPlanets,
     planetsBuffers,
     modelMatrixUniformBufferSize,
@@ -79,7 +79,7 @@ export const Tail = ({
     planetsBuffers: PlanetInfo[];
     modelMatrixUniformBufferSize: number;
     allModelMatrices: Float32Array;
-  }) => {
+  }) {
     // Get center points
     const planetsCenter = getPlanetsCenterPointAndRadius({
       numberOfPlanets,
@@ -113,9 +113,9 @@ export const Tail = ({
 
     // update how many points a planet has
     coordinatesPerPlanet++;
-  };
+  }
 
-  const renderTail = ({
+  function renderTail({
     numberOfPlanets,
     planetsBuffers,
     modelMatrixUniformBufferSize,
@@ -131,7 +131,7 @@ export const Tail = ({
     viewProjectionMatrixUniformBuffer: GPUBuffer;
     renderPass: GPURenderPassEncoder;
     recalculateTailBuffer: boolean;
-  }) => {
+  }) {
     // Only calculate the tail center positions when:
     // the current frame is a multiple of the current RENDER_TAIL_FREQUENCY;
     // - OR the array of tailCenterPositions is empty;
@@ -169,7 +169,7 @@ export const Tail = ({
       tailCenterPositions.slice(0, coordinatesPerPlanet * numberOfPlanets)
         .length,
     );
-  };
+  }
 
   return {
     renderTail,

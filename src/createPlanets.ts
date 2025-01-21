@@ -1,7 +1,7 @@
 import { Observer } from "./observer";
 import { PlanetTextures } from "./textures";
 import { PlanetInfo } from "./types";
-import { UI_SETTINGS } from "./ui";
+import { SetupUI, UI_SETTINGS } from "./ui";
 import { createSphereMesh } from "./utils";
 
 export const CreatePlanets = async (device: GPUDevice) => {
@@ -58,22 +58,30 @@ export const CreatePlanets = async (device: GPUDevice) => {
     currentNumberOfPlanets,
     radius,
     addNew,
+    updateLatOrLongBands,
   }: {
     planetsToCreate?: number;
     currentNumberOfPlanets: number;
     radius?: number;
     addNew?: boolean;
+    updateLatOrLongBands?: boolean;
   }) {
     if (planetsToCreate === undefined) {
       planetsToCreate = currentNumberOfPlanets;
     }
 
+    // INFO: without this the lat and long bands only will be updated
+    // for the next planets (those that are not already in the planetsBuffers array)
+    if (updateLatOrLongBands) {
+      planetsBuffers = [];
+    }
+
     if (addNew) {
       Observer().notify("planets", currentNumberOfPlanets + planetsToCreate);
       UI_SETTINGS.planets = currentNumberOfPlanets;
-      // TODO: check this, we need to update the current number of planets
-      // in the  UI.
-      // planetsGUIListener.updateDisplay();
+      SetupUI().planetsGUIListener.setValue(
+        currentNumberOfPlanets + planetsToCreate,
+      );
     }
 
     for (let i = 0; i < planetsToCreate; i++) {

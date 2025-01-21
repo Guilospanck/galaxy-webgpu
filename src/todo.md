@@ -53,14 +53,17 @@ primitive: { topology: "triangle-list" }, // Change this to `point-list` to have
 
 Not sure it is working properly.
 
-## (Ongoing) Refactor and improve code
+## (Done) Refactor and improve code
 
-TODO: change from arrow function to regular functions inside functional components.
-TODO: fix the latBands and longBands not updating current rendered planets
-TODO: fix the UI not updating when planets change (collisions creates a new planet)
+DONE: fix the latBands and longBands not updating current rendered planets
+DONE: fix the UI not updating when planets change (collisions creates a new planet)
+DONE: change from arrow function to regular functions inside functional components.
+
+## Check collisions
+
+TODO: Check if the parallelism in the collision computing is being done right now that the variables have changed
+TODO: check if the collisions are working properly after that.
 
 ## (Ongoing, so far it creates a new planet) Add some collision effect
-
-## Check if the parallelism in the collision computing is being done right now that the variables have changed
 
 ## Add resize observer to the canvas

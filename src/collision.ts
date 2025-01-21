@@ -48,13 +48,13 @@ export const Collisions = ({
     },
   });
 
-  const recreateComputeShaderBuffers = ({
+  function recreateComputeShaderBuffers({
     numberOfPlanets,
     planetsCenterPointsAndRadius,
   }: {
     numberOfPlanets: number;
     planetsCenterPointsAndRadius: vec4[];
-  }) => {
+  }) {
     planetsCenterPointAndRadiusBuffer = device.createBuffer({
       label: "compute shader planets center points and radius buffer",
       size: numberOfPlanets * Float32Array.BYTES_PER_ELEMENT * 4, // x, y, z, r
@@ -117,14 +117,10 @@ export const Collisions = ({
         planetsCenterPointsAndRadius.map((a) => [...a]).flat() as number[],
       ),
     );
-  };
+  }
 
   /// Parse collison results buffer
-  const parseResultsBuffer = ({
-    arrayBuffer,
-  }: {
-    arrayBuffer: ArrayBuffer;
-  }) => {
+  function parseResultsBuffer({ arrayBuffer }: { arrayBuffer: ArrayBuffer }) {
     const view = new DataView(arrayBuffer.slice(4)); // remove `count`
     const structSize = 2 * 4; // CollisionPair (a: number, b: number)
 
@@ -145,13 +141,13 @@ export const Collisions = ({
 
     console.info(`Collisions found: ${collisions.length}`);
     Observer().notify("collisions", collisions);
-  };
+  }
 
-  const checkCollisionViaComputeShader = async ({
+  async function checkCollisionViaComputeShader({
     numberOfPlanets,
   }: {
     numberOfPlanets: number;
-  }) => {
+  }) {
     console.info("Checking collisions...");
 
     // Create Command Encoder
@@ -191,7 +187,7 @@ export const Collisions = ({
 
     // release buffer
     resultsBuffer.unmap();
-  };
+  }
 
   return {
     checkCollisionViaComputeShader,

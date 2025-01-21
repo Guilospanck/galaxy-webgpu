@@ -1,4 +1,8 @@
-import { CHECK_COLLISION_FREQUENCY, RENDER_TAIL_FREQUENCY } from "./constants";
+import {
+  CHECK_COLLISION_FREQUENCY,
+  COLLISION_CREATED_PLANET_RADIUS,
+  RENDER_TAIL_FREQUENCY,
+} from "./constants";
 import { getPlanetsCenterPointAndRadius } from "./utils";
 import { initWebGPUAndCanvas } from "./webgpu";
 import { vec4 } from "gl-matrix";
@@ -137,13 +141,12 @@ const updatePlanetsForComputeShaderCollision = () => {
     },
   });
 
-  // TODO: lat and longbands are only changing the `next` planets, not the current
-  // ones in the planetsBuffers variable
   observer.subscribe("latBands", {
     id: OBSERVER_ID,
     callback: (_latBands) => {
       createPlanets({
         currentNumberOfPlanets: getNumberOfPlanets(),
+        updateLatOrLongBands: true,
       });
       updatePlanetsForComputeShaderCollision();
     },
@@ -154,6 +157,7 @@ const updatePlanetsForComputeShaderCollision = () => {
     callback: (_longBands) => {
       createPlanets({
         currentNumberOfPlanets: getNumberOfPlanets(),
+        updateLatOrLongBands: true,
       });
       updatePlanetsForComputeShaderCollision();
     },
@@ -166,7 +170,7 @@ const updatePlanetsForComputeShaderCollision = () => {
       createPlanets({
         planetsToCreate: (collisions as CollisionPair[]).length,
         currentNumberOfPlanets: getNumberOfPlanets(),
-        radius: 3,
+        radius: COLLISION_CREATED_PLANET_RADIUS,
         addNew: true,
       });
     },

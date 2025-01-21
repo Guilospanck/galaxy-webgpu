@@ -135,13 +135,13 @@ export const Render = ({
     },
   });
 
-  const setModelMatrixUniformBuffer = ({
+  function setModelMatrixUniformBuffer({
     ellipse_a,
     eccentricity,
   }: {
     ellipse_a: number;
     eccentricity: number;
-  }): GPUBuffer => {
+  }): GPUBuffer {
     const zAxisRotation = new Date().getTime() * ROTATION_SPEED_SENSITIVITY;
 
     allModelMatrices = new Float32Array(
@@ -204,7 +204,7 @@ export const Render = ({
     modelMatrixUniformBuffer.unmap();
 
     return modelMatrixUniformBuffer;
-  };
+  }
 
   const baseRenderPipeline: GPURenderPipelineDescriptor = {
     label: "render pipeline",
@@ -260,9 +260,9 @@ export const Render = ({
     primitive: { topology: TopologyEnum.LINE_LIST }, // Change this to `point-list` to have a "see-through"
   });
 
-  const getPipelineBasedOnCurrentTopology = (
+  function getPipelineBasedOnCurrentTopology(
     topology: TopologyEnum,
-  ): GPURenderPipeline => {
+  ): GPURenderPipeline {
     switch (topology) {
       case TopologyEnum.LINE_LIST: {
         return lineListRenderPipeline;
@@ -274,9 +274,9 @@ export const Render = ({
         return pointListRenderPipeline;
       }
     }
-  };
+  }
 
-  const renderPlanets = async ({
+  async function renderPlanets({
     renderPass,
     enableArmor,
     ellipse_a,
@@ -292,7 +292,7 @@ export const Render = ({
     topology: TopologyEnum;
     viewProjectionMatrixUniformBuffer: GPUBuffer;
     planetsBuffers: PlanetInfo[];
-  }) => {
+  }) {
     const modelMatrixUniformBuffer = setModelMatrixUniformBuffer({
       ellipse_a,
       eccentricity,
@@ -338,7 +338,7 @@ export const Render = ({
         renderPass.drawIndexed(indices.length);
       }
     }
-  };
+  }
 
   return {
     getNumberOfPlanets,
