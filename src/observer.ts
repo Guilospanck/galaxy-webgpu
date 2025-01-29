@@ -12,7 +12,8 @@ export type Topic =
   | "collisions" // Number of collisions found
   | "enableCollisions" // UI settings to enable the collisions
   | "checkCollisions" // Actually check the collision in the current frame
-  | "pointerEvents"; // What has actually changed from the camera parameters (zoom, pan, rotation)
+  | "pointerEvents" // What has actually changed from the camera parameters (zoom, pan, rotation)
+  | "translationSpeed"; // planets translation speed
 
 type Subscriber = {
   id: string;

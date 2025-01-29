@@ -9,7 +9,11 @@ export const FULL_CIRCUMFERENCE = 360; // 360 degrees
 export const CHECK_COLLISION_FREQUENCY = 1097; // Check for collisions every currentFrame % 1097 === 0
 export const RENDER_TAIL_FREQUENCY = 100;
 export const ROTATION_SPEED_SENSITIVITY = 1e-3;
+
 export const TRANSLATION_SPEED_SENSITIVITY = 0.1;
+export const TRANSLATION_SPEED_SENSITIVITY_MAX = 10.0;
+export const TRANSLATION_SPEED_SENSITIVITY_MIN = 0.01;
+export const TRANSLATION_SPEED_SENSITIVITY_STEP = 0.001;
 
 export enum TopologyEnum {
   POINT_LIST = "point-list",

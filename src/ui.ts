@@ -21,6 +21,10 @@ import {
   MIN_PLANETS,
   PLANETS_STEP,
   TOPOLOGIES,
+  TRANSLATION_SPEED_SENSITIVITY,
+  TRANSLATION_SPEED_SENSITIVITY_MAX,
+  TRANSLATION_SPEED_SENSITIVITY_MIN,
+  TRANSLATION_SPEED_SENSITIVITY_STEP,
 } from "./constants";
 import { Observer } from "./observer";
 
@@ -31,6 +35,7 @@ export const UI_SETTINGS = {
   topology: DEFAULT_TOPOLOGY,
   latBands: DEFAULT_LAT_BANDS,
   longBands: DEFAULT_LONG_BANDS,
+  translationSpeed: TRANSLATION_SPEED_SENSITIVITY,
   enableArmor: false,
   enableTail: false,
   enableCollisions: false,
@@ -80,6 +85,17 @@ export const SetupUI = (() => {
       .add(UI_SETTINGS, "longBands", MIN_LONG_BANDS, MAX_LONG_BANDS)
       .onChange((longBands) => {
         Observer().notify("longBands", longBands);
+      });
+    gui
+      .add(
+        UI_SETTINGS,
+        "translationSpeed",
+        TRANSLATION_SPEED_SENSITIVITY_MIN,
+        TRANSLATION_SPEED_SENSITIVITY_MAX,
+      )
+      .step(TRANSLATION_SPEED_SENSITIVITY_STEP)
+      .onChange((translationSpeed) => {
+        Observer().notify("translationSpeed", translationSpeed);
       });
 
     gui.add(UI_SETTINGS, "enableTail").onChange((enableTail) => {

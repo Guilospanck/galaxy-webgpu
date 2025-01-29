@@ -14,6 +14,7 @@ import {
 } from "./utils";
 import { PlanetInfo } from "./types";
 import { Observer } from "./observer";
+import { UI_SETTINGS } from "./ui";
 
 export const Render = ({
   format,
@@ -152,7 +153,7 @@ export const Render = ({
     let previousTranslation: vec3 = [0, 0, 0];
     for (let i = 0; i < planetsCount; i++) {
       const angle =
-        ((lastAngleOfPlanet[i] ?? 0) + TRANSLATION_SPEED_SENSITIVITY) %
+        ((lastAngleOfPlanet[i] ?? 0) + UI_SETTINGS.translationSpeed) %
         FULL_CIRCUMFERENCE;
       lastAngleOfPlanet[i] = angle;
 
